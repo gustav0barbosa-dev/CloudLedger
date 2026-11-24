@@ -67,6 +67,10 @@ export class AuthService {
     this.isAuthenticated.set(true);
   }
 
+  updateUser(user: AuthResponse['user']): void {
+    this.user.set(user);
+  }
+
   logout() {
     const refresh = localStorage.getItem(this.refreshKey);
     if (refresh) {

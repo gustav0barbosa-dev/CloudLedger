@@ -183,7 +183,7 @@ Directory.CreateDirectory(reportsPath);
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new PhysicalFileProvider(reportsPath),
-    RequestPath = "/reports"
+    RequestPath = "/api/v1/reports/files"
 });
 
 app.MapControllers();

@@ -3,10 +3,5 @@
     "target": "http://localhost:5080",
     "secure": false,
     "changeOrigin": true
-  },
-  "/reports": {
-    "target": "http://localhost:5080",
-    "secure": false,
-    "changeOrigin": true
   }
 }

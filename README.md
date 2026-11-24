@@ -125,10 +125,14 @@ Instruções detalhadas, incluindo migrações e testes, estão em [`docs/archit
 | 5 — AWS e eventos | Outbox transacional, SQS + Worker, idempotência em DynamoDB, adaptadores S3/SQS/DynamoDB | ✅ (CloudWatch alarms e deploy em AWS pendentes de validação) |
 | 6 — Finalização | E2E (Playwright), autenticação, testes e CI | ✅ (paridade total com o protótipo e deploy pendentes) |
 
+### Cobertura do protótipo
+
+O frontend implementa as telas e ações do protótipo: CRUD de categorias, contas e lançamentos,
+filtros/paginação, transferências, pagamentos recorrentes com pagamento/ignorar ocorrências,
+metas com aportes/retiradas/cancelamento, notificações, auditoria, relatórios, perfil/senha e
+configurações. Os cenários principais são validados por Playwright em `tests/e2e/`.
+
 ### Pendências conhecidas
 
 - Validação ponta a ponta de S3, DynamoDB, DLQ e CloudWatch com LocalStack, seguida de deploy AWS.
-- Telas/ações do protótipo ainda não implementadas: CRUD de categorias, perfil/senha,
-  notificações, auditoria/relatórios, movimentação de metas, pagar/ignorar ocorrências
-  recorrentes e páginas de configurações.
 - Comparação visual exata com imagens externas; a referência é `docs/design/CloudLedger_Prototipo.html`.

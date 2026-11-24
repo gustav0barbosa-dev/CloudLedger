@@ -466,7 +466,7 @@ public sealed class LocalReportStorage : IReportStorage
         var path = Path.Combine(directory, fileName);
         await File.WriteAllTextAsync(path, content, cancellationToken);
 
-        return $"/reports/{fileName}";
+        return $"/api/v1/reports/files/{fileName}";
     }
 }
 

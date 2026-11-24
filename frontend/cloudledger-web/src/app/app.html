@@ -2,27 +2,32 @@
 <div class="app-shell">
   <header class="topbar">
     <div class="brand"><span class="brand-mark"></span>CloudLedger</div>
-    <nav class="nav">
+    <nav class="nav" aria-label="Navegação principal">
       <a routerLink="/dashboard" routerLinkActive="active">Visão geral</a>
+      <a routerLink="/transactions" routerLinkActive="active">Transações</a>
       <a routerLink="/accounts" routerLinkActive="active">Contas</a>
-      <a routerLink="/transactions" routerLinkActive="active">Lançamentos</a>
+      <a routerLink="/categories" routerLinkActive="active">Categorias</a>
       <a routerLink="/transfers" routerLinkActive="active">Transferências</a>
-      <a routerLink="/recurring" routerLinkActive="active">Recorrentes</a>
-      <a routerLink="/goals" routerLinkActive="active">Metas</a>
+      <a routerLink="/recurring" routerLinkActive="active">Pagamentos futuros</a>
+      <a routerLink="/goals" routerLinkActive="active">Metas financeiras</a>
+      <a routerLink="/reports" routerLinkActive="active">Relatórios</a>
     </nav>
     <div class="top-actions">
-      <button class="icon-btn"><span class="dot"></span></button>
-      <div class="avatar">👤</div>
+      <button class="icon-btn" title="Notificações" aria-label="Notificações" (click)="go('/notifications')">♧</button>
+      <button class="icon-btn" title="Perfil" aria-label="Perfil" (click)="go('/profile')">👤</button>
+      <button class="icon-btn" title="Configurações" aria-label="Configurações" (click)="go('/settings')">⚙️</button>
       <button class="btn secondary" (click)="logout()">Sair</button>
     </div>
   </header>
-  <aside class="sidebar">
-    <button class="side-btn active" title="Início"></button>
-    <button class="side-btn" title="Contas"></button>
-    <button class="side-btn" title="Lançamentos"></button>
-    <button class="side-btn" title="Metas"></button>
+  <aside class="sidebar" aria-label="Atalhos">
+    <a class="side-btn" title="Início" routerLink="/dashboard" routerLinkActive="active">⌂</a>
+    <a class="side-btn" title="Contas" routerLink="/accounts" routerLinkActive="active">▱</a>
+    <a class="side-btn" title="Transações" routerLink="/transactions" routerLinkActive="active">↯</a>
+    <a class="side-btn" title="Relatórios" routerLink="/reports" routerLinkActive="active">▥</a>
+    <a class="side-btn" title="Auditoria" routerLink="/audit" routerLinkActive="active">▢</a>
     <div class="side-spacer"></div>
-    <button class="side-btn" title="Configurações">⚙️</button>
+    <a class="side-btn" title="Notificações" routerLink="/notifications" routerLinkActive="active">♧</a>
+    <a class="side-btn" title="Configurações" routerLink="/settings" routerLinkActive="active">⚙</a>
   </aside>
   <main class="main">
     <div class="content">
@@ -33,3 +38,5 @@
 } @else {
   <router-outlet />
 }
+
+<app-toast />
