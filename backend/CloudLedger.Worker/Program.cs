@@ -1,0 +1,16 @@
+using CloudLedger.Application;
+using CloudLedger.Infrastructure;
+using Serilog;
+
+var builder = Host.CreateApplicationBuilder(args);
+
+builder.Services.AddSerilog(configuration => configuration
+    .Enrich.FromLogContext()
+    .WriteTo.Console());
+
+builder.Services.AddApplication();
+builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddHostedService<CloudLedger.Worker.Workers.WorkerHeartbeat>();
+
+var host = builder.Build();
+await host.RunAsync();

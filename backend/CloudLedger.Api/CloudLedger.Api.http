@@ -1,0 +1,6 @@
+@CloudLedger.Api_HostAddress = http://localhost:5190
+
+GET {{CloudLedger.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
