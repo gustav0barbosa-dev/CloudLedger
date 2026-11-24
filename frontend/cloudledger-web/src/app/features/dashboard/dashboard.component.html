@@ -1,0 +1,28 @@
+<div class="page-head">
+  <h1>Visão geral</h1>
+  <span class="period">Últimos 30 dias</span>
+</div>
+
+@if (loading()) {
+  <div class="card state">Carregando dashboard...</div>
+}
+
+@if (error(); as message) {
+  <div class="card state error">{{ message }}</div>
+}
+
+@if (data(); as dashboard) {
+  <app-summary-cards [summary]="dashboard.summary" />
+
+  <app-financial-chart [series]="dashboard.series" />
+
+  <div class="bottom-grid">
+    <app-transaction-history [transactions]="dashboard.recentTransactions" />
+    <app-expense-distribution [categories]="dashboard.expensesByCategory" />
+  </div>
+
+  <div class="bottom-grid second-row">
+    <app-upcoming-payments [payments]="dashboard.upcomingPayments" />
+    <app-savings-goals [goals]="dashboard.goals" />
+  </div>
+}

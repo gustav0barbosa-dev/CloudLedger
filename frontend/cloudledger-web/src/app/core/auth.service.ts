@@ -1,6 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
+import { finalize, Observable, shareReplay, tap } from 'rxjs';
 import { environment } from '../../environments/environment';
 
 interface AuthResponse {
@@ -13,6 +14,7 @@ interface AuthResponse {
 export class AuthService {
   private readonly tokenKey = 'cl_access_token';
   private readonly refreshKey = 'cl_refresh_token';
+  private refreshInFlight: Observable<AuthResponse> | null = null;
 
   readonly user = signal<AuthResponse['user'] | null>(null);
   readonly isAuthenticated = signal<boolean>(this.hasToken());
@@ -36,9 +38,26 @@ export class AuthService {
     return this.http.post<AuthResponse>(`${environment.apiBaseUrl}/auth/login`, { email, password });
   }
 
-  refresh() {
-    const refresh = localStorage.getItem(this.refreshKey);
-    return this.http.post<AuthResponse>(`${environment.apiBaseUrl}/auth/refresh`, { refreshToken: refresh });
+  /**
+   * Renovação compartilhada: várias requisições 401 aguardam o mesmo POST,
+   * evitando disputa pela rotação do refresh token.
+   */
+  refresh(): Observable<AuthResponse> {
+    if (!this.refreshInFlight) {
+      const refresh = localStorage.getItem(this.refreshKey);
+
+      this.refreshInFlight = this.http
+        .post<AuthResponse>(`${environment.apiBaseUrl}/auth/refresh`, { refreshToken: refresh })
+        .pipe(
+          tap(response => this.setSession(response)),
+          finalize(() => {
+            this.refreshInFlight = null;
+          }),
+          shareReplay({ bufferSize: 1, refCount: false })
+        );
+    }
+
+    return this.refreshInFlight;
   }
 
   setSession(response: AuthResponse) {

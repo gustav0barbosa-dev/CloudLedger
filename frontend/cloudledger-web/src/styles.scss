@@ -59,3 +59,24 @@ h1 { font-size:22px; font-weight:550; letter-spacing:-.5px; margin:0; }
 .aside-row { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #303037; font-size:12px; }
 .aside-row:last-child { border-bottom:none; }
 .empty { color:var(--muted); font-size:12px; padding:12px 0; }
+
+@media (max-width:1100px) {
+  .stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .bottom-grid { grid-template-columns:1fr; }
+  .nav { overflow-x:auto; }
+  .brand { min-width:auto; }
+}
+
+@media (max-width:700px) {
+  .app-shell { grid-template-columns:1fr; grid-template-rows:auto auto 1fr; padding:10px; gap:10px; border-radius:0; }
+  .topbar { grid-column:1; flex-wrap:wrap; gap:10px; }
+  .nav { width:100%; overflow-x:auto; padding-bottom:4px; }
+  .top-actions { margin-left:auto; }
+  .sidebar { grid-row:2; flex-direction:row; justify-content:center; padding:6px; }
+  .side-spacer { display:none; }
+  .main { grid-row:3; }
+  .stats { grid-template-columns:1fr; }
+  .card { padding:12px; }
+  .stat-value { font-size:20px; }
+  .table { font-size:10px; }
+}

@@ -14,10 +14,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     catchError((err: HttpErrorResponse) => {
       if (err.status === 401 && !req.url.includes('/auth/')) {
         return auth.refresh().pipe(
-          switchMap(res => {
-            auth.setSession(res);
-            return next(addToken(req, res.accessToken));
-          }),
+          switchMap(res => next(addToken(req, res.accessToken))),
           catchError(refreshErr => {
             auth.logout();
             return throwError(() => refreshErr);

@@ -1,0 +1,24 @@
+.state {
+  padding: 24px;
+  color: var(--muted);
+}
+
+.state.error {
+  color: var(--red);
+}
+
+.bottom-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(210px, .9fr);
+  gap: 12px;
+}
+
+.second-row {
+  margin-top: 12px;
+}
+
+@media (max-width: 1100px) {
+  .bottom-grid {
+    grid-template-columns: 1fr;
+  }
+}
