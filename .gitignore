@@ -1,0 +1,51 @@
+# ---------- .NET ----------
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+TestResults/
+coverage*.xml
+coverage*.json
+*.trx
+*.received.*
+publish/
+artifacts/
+
+# ---------- Node / Angular ----------
+node_modules/
+dist/
+.angular/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.env
+.env.local
+.env.*.local
+
+# ---------- IDE / OS ----------
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ---------- Local infra ----------
+infrastructure/.terraform/
+*.tfstate
+*.tfstate.*
+docker/volumes/
+logs/
+*.log
+
+# ---------- Secrets ----------
+*.pfx
+*.pem
+secrets/
+appsettings.Local.json
+appsettings.*.Local.json

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CloudLedger — Visão geral</title>
+<style>
+:root{
+  --bg:#17132b;--panel:#0d0d10;--card:#151518;--card2:#1b1b20;--line:#292930;
+  --text:#f4f3f8;--muted:#92919d;--purple:#8b5cf6;--cyan:#42c7df;
+  --green:#43e0ad;--red:#ff707d;--yellow:#f7c65e;
+}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 10% 15%,#37306b 0,transparent 38%),radial-gradient(ellipse at 90% 90%,#35245f 0,transparent 38%),var(--bg);color:var(--text);font:14px Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;padding:34px}
+button,input,select{font:inherit}
+button{cursor:pointer}
+.app{max-width:1450px;min-height:850px;margin:auto;background:#050506;border:1px solid #24232a;border-radius:22px;padding:22px 24px;box-shadow:0 30px 90px #08061199;display:grid;grid-template-columns:58px minmax(0,1fr);grid-template-rows:54px 1fr;gap:18px 26px}
+.topbar{grid-column:1/3;display:flex;align-items:center;gap:24px}
+.brand{display:flex;align-items:center;gap:10px;min-width:225px;font-size:18px;font-weight:650;letter-spacing:-.5px}
+.brand-mark{width:25px;height:25px;position:relative;display:inline-block}
+.brand-mark:before,.brand-mark:after{content:"";position:absolute;width:21px;height:9px;background:#a7a2ff;transform:skew(28deg);left:1px}
+.brand-mark:before{top:3px}.brand-mark:after{top:14px;left:6px;background:#d5d2ff}
+.nav{display:flex;align-items:center;gap:10px;flex:1;white-space:nowrap}
+.nav button{background:none;border:1px solid transparent;color:#a4a2ad;padding:9px 13px;border-radius:7px}
+.nav button.active,.nav button:hover{background:#242428;border-color:#34343a;color:#fff}
+.top-actions{display:flex;align-items:center;gap:10px}
+.icon-btn{width:38px;height:38px;border:1px solid #35353c;background:#202024;color:#ddd;border-radius:8px;position:relative}
+.dot{position:absolute;width:7px;height:7px;background:#ff5265;border-radius:50%;right:8px;top:7px}
+.avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#e9d4a9,#7d9c75);display:grid;place-items:center;font-size:19px;border:2px solid #c3b7ff}
+.sidebar{grid-row:2;background:#17171a;border:1px solid #25252b;border-radius:13px;display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:9px}
+.side-btn{width:40px;height:40px;border:0;border-radius:9px;background:transparent;color:#92929c;font-size:18px}
+.side-btn.active,.side-btn:hover{background:#393a3e;color:white}
+.side-spacer{flex:1}
+.main{min-width:0;display:grid;grid-template-columns:minmax(0,1fr) 246px;gap:14px}
+.content{min-width:0}
+.page-head{display:flex;align-items:center;justify-content:space-between;margin:0 0 18px}
+h1{font-size:22px;font-weight:550;letter-spacing:-.5px;margin:0}
+.period{background:#222226;border:1px solid #34343b;color:#ddd;padding:9px 12px;border-radius:7px}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:7px;padding:14px;min-width:0}
+.stat-label{color:#c5c3cb;font-size:12px;margin-bottom:12px}
+.stat-value{font-size:23px;letter-spacing:-1px;white-space:nowrap}
+.change{font-size:11px;margin-left:5px;color:var(--green);white-space:nowrap}
+.change.down{color:var(--red)}
+.spark{width:100%;height:45px;margin-top:9px;display:block}
+.chart-card{height:310px;margin-bottom:12px;padding:16px}
+.card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.card-head strong{font-weight:500}
+.link{color:#c9c7d0;background:none;border:0;font-size:12px}
+.chart-summary{font-size:23px;margin:6px 0 0}
+.chart-summary small{font-size:11px;color:var(--green);margin-left:8px}
+.chart-wrap{height:205px;position:relative;margin-top:4px}
+.chart-wrap svg{width:100%;height:100%;overflow:visible}
+.axis-labels{display:flex;justify-content:space-between;color:#898894;font-size:10px;margin-top:1px}
+.bottom-grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(210px,.9fr);gap:12px}
+.history,.upcoming{min-height:250px}
+.table{width:100%;border-collapse:collapse;margin-top:16px;font-size:11px}
+.table th{text-align:left;color:#b9b7c1;font-weight:450;padding:9px 5px;border-bottom:1px solid #34343a}
+.table td{padding:13px 5px;border-bottom:1px solid #303037;color:#e2e1e7;white-space:nowrap}
+.merchant{display:flex;align-items:center;gap:9px}
+.logo{width:27px;height:27px;border-radius:50%;display:grid;place-items:center;background:#f4f4f4;color:#111;font-weight:700;font-size:12px}
+.status{padding:5px 8px;border-radius:4px;font-size:10px}
+.approved{background:#123f31;color:#43e0ad}.pending{background:#493a18;color:#f4cc69}.declined{background:#4a2027;color:#ff8993}
+.payment{display:flex;align-items:center;gap:10px;margin:17px 0}
+.payment .logo{width:34px;height:34px}
+.payment-info{flex:1;min-width:0}.payment-info span{display:block;color:#92919d;font-size:11px;margin-top:3px}
+.payment-amount{font-size:12px;text-align:right}
+.right-col{display:flex;flex-direction:column;gap:12px}
+.expense-card{padding:16px}
+.donut-wrap{display:flex;justify-content:center;align-items:center;height:175px;position:relative}
+.donut{width:145px;height:145px;border-radius:50%;background:conic-gradient(#8b42db 0 24%,#625ff0 24% 48%,#37b6d4 48% 75%,#8b42db 75% 100%);display:grid;place-items:center;position:relative;transform:rotate(-35deg)}
+.donut:after{content:"";position:absolute;inset:12px;border-radius:50%;background:#151518}
+.donut-center{position:absolute;z-index:1;text-align:center;transform:rotate(35deg)}
+.donut-center b{font-size:21px;font-weight:500}.donut-center span{display:block;color:#9d9ba6;font-size:10px;margin-top:4px}
+.legend{display:flex;gap:12px;justify-content:center;color:#aaa8b2;font-size:10px;flex-wrap:wrap;margin-bottom:14px}
+.legend i{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}
+.pills{display:flex;background:#29292e;border:1px solid #393940;border-radius:20px;padding:3px;margin-bottom:12px}
+.pills button{flex:1;border:0;background:none;color:#92919d;font-size:10px;padding:5px;border-radius:15px}
+.pills button.active{background:#4a4a50;color:white}
+.category{display:flex;align-items:center;gap:9px;padding:8px 0}
+.cat-icon{width:31px;height:31px;border-radius:8px;display:grid;place-items:center;font-size:16px}
+.cat-name{flex:1}.cat-name small{display:block;color:#92919d;font-size:10px;margin-top:3px}
+.cat-amount{text-align:right;font-size:11px}.cat-amount small{display:block;color:#92919d;margin-top:3px}
+.goals{padding:15px}
+.goal{display:flex;gap:9px;align-items:center;margin-top:17px}
+.goal-emoji{width:33px;height:33px;border-radius:8px;background:#663ad6;display:grid;place-items:center;font-size:17px}
+.goal-info{flex:1;font-size:12px}.goal-info small{display:block;color:#9997a2;margin-top:3px;font-size:10px}
+.progress{height:8px;background:#303035;border-radius:8px;margin-top:8px;overflow:hidden}
+.progress span{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,#a855f7,#6d5df5)}
+.goal + .progress{margin-bottom:3px}
+.toast{position:fixed;right:24px;bottom:24px;background:#25252c;border:1px solid #484852;padding:12px 16px;border-radius:9px;color:#fff;box-shadow:0 10px 30px #0008;opacity:0;transform:translateY(10px);transition:.2s;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+@media(max-width:1100px){body{padding:16px}.app{padding:18px;gap:14px 16px}.brand{min-width:175px}.nav{gap:2px}.nav button{padding:8px}.main{grid-template-columns:minmax(0,1fr) 220px}.stats{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:800px){body{padding:0;background:#08080b}.app{border-radius:0;border:0;min-height:100vh;padding:14px;grid-template-columns:45px minmax(0,1fr);gap:12px}.topbar{gap:10px;flex-wrap:wrap;height:auto}.brand{min-width:0;flex:1}.nav{order:3;flex-basis:100%;overflow:auto}.top-actions{margin-left:auto}.main{grid-template-columns:1fr}.right-col{display:grid;grid-template-columns:1fr 1fr}.sidebar{grid-row:2}.chart-card{height:285px}.bottom-grid{grid-template-columns:1fr}.history{overflow:auto}.table{min-width:540px}}
+@media(max-width:480px){.right-col{grid-template-columns:1fr}.stats{gap:8px}.stat-value{font-size:19px}.card{padding:11px}.main{gap:10px}.page-head{margin-bottom:12px}.brand{font-size:16px}.icon-btn{width:34px;height:34px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark"></span>CloudLedger</div>
+    <nav class="nav" aria-label="Navegação principal">
+      <button class="active" data-page="Visão geral">Visão geral</button>
+      <button data-page="Transações">Transações</button>
+      <button data-page="Despesas">Despesas</button>
+      <button data-page="Pagamentos futuros">Pagamentos futuros</button>
+      <button data-page="Metas financeiras">Metas financeiras</button>
+    </nav>
+    <div class="top-actions">
+      <button class="icon-btn" id="searchBtn" aria-label="Pesquisar">⌕</button>
+      <button class="icon-btn" id="noticeBtn" aria-label="Notificações">♧<i class="dot"></i></button>
+      <div class="avatar" title="Perfil">👨🏻</div>
+      <span style="color:#aaa">⌄</span>
+    </div>
+  </header>
+  <aside class="sidebar" aria-label="Menu lateral">
+    <button class="side-btn active" title="Visão geral">⌂</button>
+    <button class="side-btn" title="Clientes">♧</button>
+    <button class="side-btn" title="Carteira">▱</button>
+    <button class="side-btn" title="Transferências">↯</button>
+    <button class="side-btn" title="Relatórios">▥</button>
+    <button class="side-btn" title="Documentos">▢</button>
+    <button class="side-btn" title="Produtos">⬡</button>
+    <div class="side-spacer"></div>
+    <button class="side-btn" title="Ajuda">ⓘ</button>
+    <button class="side-btn" title="Configurações">⚙</button>
+  </aside>
+  <main class="main">
+    <section class="content">
+      <div class="page-head"><h1 id="pageTitle">Visão geral</h1><select class="period" id="period"><option>Novembro 2026</option><option>Outubro 2026</option><option>Setembro 2026</option></select></div>
+      <div class="stats">
+        <article class="card"><div class="stat-label">Saldo total</div><div class="stat-value">R$ 12.395<span class="change">▲ 14,5%</span></div><svg class="spark" viewBox="0 0 180 45"><path d="M2 32 L18 29 29 33 44 27 57 30 71 22 83 25 99 17 111 21 124 11 138 19 151 7 178 5" fill="none" stroke="#43e0ad" stroke-width="2"/></svg></article>
+        <article class="card"><div class="stat-label">Receitas</div><div class="stat-value">R$ 8.420<span class="change">▲ 25,0%</span></div><svg class="spark" viewBox="0 0 180 45"><path d="M2 34 L17 30 29 33 43 22 57 28 70 18 84 23 99 17 113 16 126 9 140 14 154 5 178 2" fill="none" stroke="#43e0ad" stroke-width="2"/></svg></article>
+        <article class="card"><div class="stat-label">Despesas</div><div class="stat-value">R$ 4.613<span class="change down">▼ 12,2%</span></div><svg class="spark" viewBox="0 0 180 45"><path d="M2 28 L18 24 31 29 46 22 59 25 73 10 88 8 103 2 117 13 131 25 145 22 159 29 178 32" fill="none" stroke="#ff707d" stroke-width="2"/></svg></article>
+        <article class="card"><div class="stat-label">Economia</div><div class="stat-value">R$ 3.680<span class="change">▲ 36,7%</span></div><svg class="spark" viewBox="0 0 180 45"><path d="M2 36 L17 28 31 18 45 7 59 18 72 24 86 14 100 29 114 17 128 24 143 12 158 18 178 4" fill="none" stroke="#43e0ad" stroke-width="2"/></svg></article>
+      </div>
+      <article class="card chart-card">
+        <div class="card-head"><strong>Fluxo financeiro mensal</strong><button class="link" id="chartMore">Ver relatório ›</button></div>
+        <div class="chart-summary">R$ 8.420,00 <small>▲ 25,0% em relação ao mês anterior</small></div>
+        <div class="chart-wrap">
+          <svg viewBox="0 0 760 190" preserveAspectRatio="none" role="img" aria-label="Gráfico de receitas ao longo do mês">
+            <defs><linearGradient id="area" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#8b5cf6" stop-opacity=".45"/><stop offset="1" stop-color="#8b5cf6" stop-opacity=".02"/></linearGradient></defs>
+            <g stroke="#292930" stroke-width="1"><path d="M35 25H755M35 65H755M35 105H755M35 145H755M35 180H755"/></g>
+            <g fill="#8e8c98" font-size="10"><text x="3" y="28">15k</text><text x="3" y="68">10k</text><text x="10" y="108">5k</text><text x="17" y="183">0</text></g>
+            <path d="M35 125 L65 112 95 145 125 132 155 155 185 138 215 146 245 118 275 125 305 83 335 99 365 75 395 135 425 128 455 68 485 43 515 61 545 19 575 12 605 85 635 112 665 75 695 48 725 63 755 38 L755 180 L35 180Z" fill="url(#area)"/>
+            <path d="M35 125 L65 112 95 145 125 132 155 155 185 138 215 146 245 118 275 125 305 83 335 99 365 75 395 135 425 128 455 68 485 43 515 61 545 19 575 12 605 85 635 112 665 75 695 48 725 63 755 38" fill="none" stroke="#a78bfa" stroke-width="2.5" stroke-linejoin="round"/>
+            <path d="M455 10V180" stroke="#38c9e0" stroke-dasharray="4 4"/>
+            <circle cx="455" cy="68" r="5" fill="#0d0d10" stroke="#a78bfa" stroke-width="3"/>
+          </svg>
+        </div>
+        <div class="axis-labels"><span>01 Nov</span><span>04 Nov</span><span>07 Nov</span><span>10 Nov</span><span>13 Nov</span><span>16 Nov</span><span>19 Nov</span><span>22 Nov</span><span>25 Nov</span><span>30 Nov</span></div>
+      </article>
+      <div class="bottom-grid">
+        <article class="card history">
+          <div class="card-head"><strong>Transações recentes</strong><button class="link" id="allTransactions">Ver todas ›</button></div>
+          <table class="table">
+            <thead><tr><th>Descrição</th><th>Valor</th><th>Data</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              <tr><td><div class="merchant"><span class="logo" style="color:#1db954">♫</span> Spotify</div></td><td>R$ 19,90</td><td>23 nov, 09:08</td><td><span class="status approved">Concluída</span></td><td>•••</td></tr>
+              <tr><td><div class="merchant"><span class="logo" style="color:#1598c5">B</span> Blue Bottle</div></td><td>R$ 50,00</td><td>22 nov, 12:15</td><td><span class="status declined">Recusada</span></td><td>•••</td></tr>
+              <tr><td><div class="merchant"><span class="logo">●</span> Apple</div></td><td>R$ 39,90</td><td>21 nov, 11:03</td><td><span class="status approved">Concluída</span></td><td>•••</td></tr>
+              <tr><td><div class="merchant"><span class="logo" style="color:#1769aa">M</span> Mercado</div></td><td>R$ 284,50</td><td>20 nov, 18:42</td><td><span class="status pending">Pendente</span></td><td>•••</td></tr>
+            </tbody>
+          </table>
+        </article>
+        <article class="card upcoming">
+          <div class="card-head"><strong>Próximos pagamentos</strong><button class="link" id="paymentsMore">•••</button></div>
+          <div class="payment"><span class="logo">10X</span><div class="payment-info">10X Designers<span>Mensal · 26 nov</span></div><div class="payment-amount">R$ 17,00</div></div>
+          <div class="payment"><span class="logo">●</span><div class="payment-info">Apple<span>Mensal · 28 nov</span></div><div class="payment-amount">R$ 41,00</div></div>
+          <div class="payment"><span class="logo" style="color:#1db954">♫</span><div class="payment-info">Spotify<span>Mensal · 29 nov</span></div><div class="payment-amount">R$ 19,90</div></div>
+          <div class="payment"><span class="logo" style="background:#1769aa;color:#fff">P</span><div class="payment-info">PetPlace<span>Mensal · 02 dez</span></div><div class="payment-amount">R$ 139,00</div></div>
+        </article>
+      </div>
+    </section>
+    <aside class="right-col">
+      <article class="card expense-card">
+        <div class="card-head"><strong>Despesas por categoria</strong><button class="link" id="expenseMore">Ver mais ›</button></div>
+        <div class="donut-wrap"><div class="donut"></div><div class="donut-center"><b>R$ 4.613</b><span>Total de despesas<br>no mês</span></div></div>
+        <div class="legend"><span><i style="background:#8b42db"></i>Moradia</span><span><i style="background:#625ff0"></i>Alimentação</span><span><i style="background:#37b6d4"></i>Mercado</span></div>
+        <div class="pills"><button class="active">Categoria</button><button>Estabelecimento</button><button>Conta</button></div>
+        <div class="category"><span class="cat-icon" style="background:#4130a7">🗝️</span><div class="cat-name">Moradia<small>2 transações</small></div><div class="cat-amount">R$ 1.530<small>33%</small></div></div>
+        <div class="category"><span class="cat-icon" style="background:#176f72">🍜</span><div class="cat-name">Alimentação<small>43 transações</small></div><div class="cat-amount">R$ 2.030<small>44%</small></div></div>
+        <div class="category"><span class="cat-icon" style="background:#a52b9a">🛒</span><div class="cat-name">Mercado<small>14 transações</small></div><div class="cat-amount">R$ 920<small>20%</small></div></div>
+        <div class="category"><span class="cat-icon" style="background:#a77c25">📦</span><div class="cat-name">Outros<small>14 transações</small></div><div class="cat-amount">R$ 133<small>3%</small></div></div>
+      </article>
+      <article class="card goals">
+        <div class="card-head"><strong>Metas financeiras</strong><button class="link" id="goalsMore">Ver mais ›</button></div>
+        <div class="goal"><span class="goal-emoji">🏝️</span><div class="goal-info">Viagem de férias<small>R$ 942 de R$ 2.000</small></div></div><div class="progress"><span style="width:47%"></span></div>
+        <div class="goal"><span class="goal-emoji" style="background:#276b45">🚙</span><div class="goal-info">Carro novo<small>R$ 32.400 de R$ 50.000</small></div></div><div class="progress"><span style="width:65%;background:linear-gradient(90deg,#80d88c,#49bd77)"></span></div>
+      </article>
+    </aside>
+  </main>
+</div>
+<div class="toast" id="toast" role="status"></div>
+<script>
+const toast = document.getElementById('toast');
+let toastTimer;
+function notify(message){
+  toast.textContent=message;toast.classList.add('show');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),2400);
+}
+document.querySelectorAll('.nav button').forEach(button=>{
+  button.addEventListener('click',()=>{
+    document.querySelectorAll('.nav button').forEach(item=>item.classList.remove('active'));
+    button.classList.add('active');
+    document.getElementById('pageTitle').textContent=button.dataset.page;
+    notify('Seção "'+button.dataset.page+'" selecionada — protótipo visual.');
+  });
+});
+document.querySelectorAll('.side-btn').forEach((button,index)=>{
+  button.addEventListener('click',()=>{
+    document.querySelectorAll('.side-btn').forEach(item=>item.classList.remove('active'));
+    button.classList.add('active');notify('Atalho do menu selecionado.');
+  });
+});
+document.querySelectorAll('.pills button').forEach(button=>{
+  button.addEventListener('click',()=>{
+    button.parentElement.querySelectorAll('button').forEach(item=>item.classList.remove('active'));
+    button.classList.add('active');notify('Visualização alterada para: '+button.textContent+'.');
+  });
+});
+document.getElementById('period').addEventListener('change',e=>notify('Período selecionado: '+e.target.value+'.'));
+document.getElementById('searchBtn').addEventListener('click',()=>{
+  const term=prompt('O que deseja pesquisar?');
+  if(term)notify('Pesquisa por "'+term+'" (dados demonstrativos).');
+});
+document.getElementById('noticeBtn').addEventListener('click',()=>notify('Você não tem novas notificações.'));
+['chartMore','allTransactions','paymentsMore','expenseMore','goalsMore'].forEach(id=>{
+  document.getElementById(id).addEventListener('click',()=>notify('Esta área será detalhada nas próximas etapas do projeto.'));
+});
+</script>
+</body>
+</html>
