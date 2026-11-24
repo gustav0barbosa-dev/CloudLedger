@@ -476,7 +476,17 @@ public static class AwsClientFactory
 
     public static AmazonDynamoDBConfig DynamoConfig(AwsOptions options) => BaseConfig(new AmazonDynamoDBConfig(), options);
 
-    public static AmazonS3Config S3Config(AwsOptions options) => BaseConfig(new AmazonS3Config(), options);
+    public static AmazonS3Config S3Config(AwsOptions options)
+    {
+        var config = BaseConfig(new AmazonS3Config(), options);
+        // LocalStack não publica DNS para buckets virtuais (bucket.localhost).
+        if (options.UseLocalStack)
+        {
+            config.ForcePathStyle = true;
+        }
+
+        return config;
+    }
 
     public static AWSCredentials? Credentials(AwsOptions options) =>
         options.UseLocalStack ? new BasicAWSCredentials("test", "test") : null;

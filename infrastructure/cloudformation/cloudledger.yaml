@@ -1,0 +1,1261 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  CloudLedger - stack de referencia para AWS: VPC, RDS PostgreSQL, SQS com DLQ,
+  DynamoDB, S3, ECS Fargate (API + Worker), CloudFront e CloudWatch.
+
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks:
+        - W1011
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedPattern: '^[a-z0-9-]+$'
+    Description: 'Prefixo de nomes (ex.: dev, hmg, prod).'
+
+  DbUsername:
+    Type: String
+    Default: cloudledger
+    AllowedPattern: '^[a-zA-Z][a-zA-Z0-9]*$'
+    Description: Usuario master do PostgreSQL.
+
+  DbPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 12
+    Description: Senha master do PostgreSQL.
+
+  JwtSigningKey:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    Description: Chave de assinatura JWT (>= 32 bytes).
+
+  MongoConnectionString:
+    Type: String
+    NoEcho: true
+    Description: URI do MongoDB/DocumentDB usado pela auditoria.
+
+  AlarmEmail:
+    Type: String
+    Default: ''
+    Description: Email opcional para receber alarmes do CloudWatch.
+
+  ApiDesiredCount:
+    Type: Number
+    Default: 2
+    MinValue: 1
+    MaxValue: 10
+    Description: Numero de tarefas Fargate da API.
+
+  WorkerDesiredCount:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 5
+    Description: Numero de tarefas Fargate do Worker.
+
+Conditions:
+  HasAlarmEmail:
+    Fn::Not:
+      - Fn::Equals:
+          - Ref: AlarmEmail
+          - ''
+
+Resources:
+  # ------------------------------------------------------------------ Rede
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: '${EnvironmentName}-cloudledger-vpc'
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: '${EnvironmentName}-cloudledger-igw'
+
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId:
+        Ref: Vpc
+      InternetGatewayId:
+        Ref: InternetGateway
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: Vpc
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone:
+        Fn::Select:
+          - 0
+          - Fn::GetAZs:
+              Ref: AWS::Region
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: '${EnvironmentName}-cloudledger-public-a'
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: Vpc
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone:
+        Fn::Select:
+          - 1
+          - Fn::GetAZs:
+              Ref: AWS::Region
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: '${EnvironmentName}-cloudledger-public-b'
+
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: Vpc
+      CidrBlock: 10.0.11.0/24
+      AvailabilityZone:
+        Fn::Select:
+          - 0
+          - Fn::GetAZs:
+              Ref: AWS::Region
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: '${EnvironmentName}-cloudledger-private-a'
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: Vpc
+      CidrBlock: 10.0.12.0/24
+      AvailabilityZone:
+        Fn::Select:
+          - 1
+          - Fn::GetAZs:
+              Ref: AWS::Region
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: '${EnvironmentName}-cloudledger-private-b'
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Ref: Vpc
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: '${EnvironmentName}-cloudledger-public'
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId:
+        Ref: PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:
+        Ref: InternetGateway
+
+  PublicSubnetARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: PublicSubnetA
+      RouteTableId:
+        Ref: PublicRouteTable
+
+  PublicSubnetBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: PublicSubnetB
+      RouteTableId:
+        Ref: PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Ref: Vpc
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: '${EnvironmentName}-cloudledger-private'
+
+  PrivateSubnetARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: PrivateSubnetA
+      RouteTableId:
+        Ref: PrivateRouteTable
+
+  PrivateSubnetBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: PrivateSubnetB
+      RouteTableId:
+        Ref: PrivateRouteTable
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ALB publico do CloudLedger
+      VpcId:
+        Ref: Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: '${EnvironmentName}-cloudledger-alb'
+
+  EcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Tarefas Fargate da API e do Worker
+      VpcId:
+        Ref: Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId:
+            Ref: AlbSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: '${EnvironmentName}-cloudledger-ecs'
+
+  RdsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: PostgreSQL privado do CloudLedger
+      VpcId:
+        Ref: Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId:
+            Ref: EcsSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: '${EnvironmentName}-cloudledger-rds'
+
+  # --------------------------------------------------------------- Dados
+  RdsSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnets privadas do PostgreSQL CloudLedger
+      SubnetIds:
+        - Ref: PrivateSubnetA
+        - Ref: PrivateSubnetB
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: '${EnvironmentName}-cloudledger-rds'
+
+  Postgres:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier:
+        Fn::Sub: '${EnvironmentName}-cloudledger'
+      DBInstanceClass: db.t3.micro
+      Engine: postgres
+      EngineVersion: '16.9'
+      AllocatedStorage: '20'
+      StorageType: gp3
+      StorageEncrypted: true
+      DBName: cloudledger
+      MasterUsername:
+        Ref: DbUsername
+      MasterUserPassword:
+        Ref: DbPassword
+      DBSubnetGroupName:
+        Ref: RdsSubnetGroup
+      VPCSecurityGroups:
+        - Ref: RdsSecurityGroup
+      MultiAZ: false
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+      DeletionProtection: false
+
+  DbConnectionSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name:
+        Fn::Sub: '/cloudledger/${EnvironmentName}/postgres'
+      Description: ConnectionString usada pela API e pelo Worker
+      SecretString:
+        Fn::Sub: >-
+          Host=${Postgres.Endpoint.Address};Port=${Postgres.Endpoint.Port};Database=cloudledger;Username=${DbUsername};Password=${DbPassword};Pooling=true;SSL Mode=Require
+
+  JwtSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name:
+        Fn::Sub: '/cloudledger/${EnvironmentName}/jwt-signing-key'
+      Description: Chave de assinatura dos tokens JWT
+      SecretString:
+        Ref: JwtSigningKey
+
+  MongoSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name:
+        Fn::Sub: '/cloudledger/${EnvironmentName}/mongo'
+      Description: URI do MongoDB usado pela auditoria
+      SecretString:
+        Ref: MongoConnectionString
+
+  # ------------------------------------------------------- Mensageria/estado
+  DomainEventsDlq:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName:
+        Fn::Sub: '${EnvironmentName}-cloudledger-domain-events-dlq'
+      MessageRetentionPeriod: 1209600
+
+  DomainEventsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName:
+        Fn::Sub: '${EnvironmentName}-cloudledger-domain-events'
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 1209600
+      RedrivePolicy:
+        deadLetterTargetArn:
+          Fn::GetAtt:
+            - DomainEventsDlq
+            - Arn
+        maxReceiveCount: 5
+
+  IdempotencyTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Fn::Sub: '${EnvironmentName}-cloudledger-idempotency'
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+      TimeToLiveSpecification:
+        AttributeName: ExpiresAt
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: '${EnvironmentName}-cloudledger-idempotency'
+
+  # ------------------------------------------------------------------- S3
+  ReportsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName:
+        Fn::Sub: '${AWS::AccountId}-${EnvironmentName}-cloudledger-reports'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+            AllowedOrigins:
+              - Fn::Sub: 'https://${FrontendDistribution.DomainName}'
+            MaxAge: 3600
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: '${EnvironmentName}-cloudledger-reports'
+
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName:
+        Fn::Sub: '${AWS::AccountId}-${EnvironmentName}-cloudledger-frontend'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: '${EnvironmentName}-cloudledger-frontend'
+
+  FrontendOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment:
+          Fn::Sub: '${EnvironmentName}-cloudledger-frontend'
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              CanonicalUser:
+                Fn::GetAtt:
+                  - FrontendOriginAccessIdentity
+                  - S3CanonicalUserId
+            Action: s3:GetObject
+            Resource:
+              Fn::Sub: '${FrontendBucket.Arn}/*'
+
+  SecurityHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name:
+          Fn::Sub: '${EnvironmentName}-cloudledger-security'
+        Comment: HSTS para o CloudLedger
+        SecurityHeadersConfig:
+          StrictTransportSecurity:
+            Override: true
+            AccessControlMaxAgeSec: 31536000
+            IncludeSubdomains: true
+            Preload: true
+
+  FrontendDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment:
+          Fn::Sub: '${EnvironmentName}-cloudledger'
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_100
+        IPV6Enabled: true
+        Origins:
+          - Id: FrontendS3
+            DomainName:
+              Fn::GetAtt:
+                - FrontendBucket
+                - RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity:
+                Fn::Sub: 'origin-access-identity/cloudfront/${FrontendOriginAccessIdentity}'
+          - Id: ApiAlb
+            DomainName:
+              Fn::GetAtt:
+                - Alb
+                - DNSName
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
+        DefaultCacheBehavior:
+          TargetOriginId: FrontendS3
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          ResponseHeadersPolicyId:
+            Ref: SecurityHeadersPolicy
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: ApiAlb
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - DELETE
+              - GET
+              - HEAD
+              - OPTIONS
+              - PATCH
+              - POST
+              - PUT
+            CachedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            Compress: true
+            MinTTL: 0
+            DefaultTTL: 0
+            MaxTTL: 0
+            ForwardedValues:
+              QueryString: true
+              Headers:
+                - Accept
+                - Authorization
+                - Content-Type
+                - Origin
+                - X-Correlation-Id
+              Cookies:
+                Forward: none
+            ResponseHeadersPolicyId:
+              Ref: SecurityHeadersPolicy
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+
+  # ------------------------------------------------------------------ ECS
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName:
+        Fn::Sub: '${EnvironmentName}-cloudledger'
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  ApiRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName:
+        Fn::Sub: '${EnvironmentName}-cloudledger-api'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  WorkerRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName:
+        Fn::Sub: '${EnvironmentName}-cloudledger-worker'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  EcsExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName:
+        Fn::Sub: '${EnvironmentName}-cloudledger-ecs-execution'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - Fn::Sub: 'arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+      Policies:
+        - PolicyName: ReadCloudLedgerSecrets
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - Ref: DbConnectionSecret
+                  - Ref: JwtSecret
+                  - Ref: MongoSecret
+
+  EcsTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName:
+        Fn::Sub: '${EnvironmentName}-cloudledger-ecs-task'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudLedgerDataAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ChangeMessageVisibility
+                  - sqs:CreateQueue
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                  - sqs:GetQueueUrl
+                  - sqs:ReceiveMessage
+                  - sqs:SendMessage
+                  - sqs:SetQueueAttributes
+                Resource:
+                  - Fn::GetAtt:
+                      - DomainEventsQueue
+                      - Arn
+                  - Fn::GetAtt:
+                      - DomainEventsDlq
+                      - Arn
+              - Effect: Allow
+                Action:
+                  - dynamodb:DescribeTable
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource:
+                  Fn::GetAtt:
+                    - IdempotencyTable
+                    - Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  Fn::Sub: '${ReportsBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource:
+                  Ref: ReportsBucket
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Sub: '/ecs/${EnvironmentName}-cloudledger-api'
+      RetentionInDays: 30
+
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Sub: '/ecs/${EnvironmentName}-cloudledger-worker'
+      RetentionInDays: 30
+
+  ApiTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family:
+        Fn::Sub: '${EnvironmentName}-cloudledger-api'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '512'
+      Memory: '1024'
+      ExecutionRoleArn:
+        Fn::GetAtt:
+          - EcsExecutionRole
+          - Arn
+      TaskRoleArn:
+        Fn::GetAtt:
+          - EcsTaskRole
+          - Arn
+      ContainerDefinitions:
+        - Name: api
+          Image:
+            Fn::Sub: '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ApiRepository}:latest'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+          Environment:
+            - Name: ASPNETCORE_ENVIRONMENT
+              Value: Production
+            - Name: ASPNETCORE_URLS
+              Value: http://+:8080
+            - Name: HttpsRedirection__Enabled
+              Value: 'false'
+            - Name: Logging__Json
+              Value: 'true'
+            - Name: Database__Provider
+              Value: Postgres
+            - Name: Database__AutoMigrate
+              Value: 'true'
+            - Name: Mongo__Enabled
+              Value: 'true'
+            - Name: Mongo__Database
+              Value: cloudledger_audit
+            - Name: Jwt__Issuer
+              Value: CloudLedger
+            - Name: Jwt__Audience
+              Value: CloudLedger.Web
+            - Name: Jwt__AccessTokenMinutes
+              Value: '60'
+            - Name: Jwt__RefreshTokenDays
+              Value: '7'
+            - Name: Aws__Enabled
+              Value: 'true'
+            - Name: Aws__Region
+              Value:
+                Ref: AWS::Region
+            - Name: AWS_REGION
+              Value:
+                Ref: AWS::Region
+            - Name: Aws__UseLocalStack
+              Value: 'false'
+            - Name: Aws__SqsQueueName
+              Value:
+                Fn::GetAtt:
+                  - DomainEventsQueue
+                  - QueueName
+            - Name: Aws__DynamoTableName
+              Value:
+                Ref: IdempotencyTable
+            - Name: Aws__S3BucketName
+              Value:
+                Ref: ReportsBucket
+            - Name: Cors__AllowedOrigins__0
+              Value:
+                Fn::Sub: 'https://${FrontendDistribution.DomainName}'
+            - Name: RateLimiting__Auth__PermitLimit
+              Value: '100'
+          Secrets:
+            - Name: ConnectionStrings__Postgres
+              ValueFrom:
+                Ref: DbConnectionSecret
+            - Name: Jwt__SigningKey
+              ValueFrom:
+                Ref: JwtSecret
+            - Name: Mongo__ConnectionString
+              ValueFrom:
+                Ref: MongoSecret
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group:
+                Ref: ApiLogGroup
+              awslogs-region:
+                Ref: AWS::Region
+              awslogs-stream-prefix: api
+
+  WorkerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family:
+        Fn::Sub: '${EnvironmentName}-cloudledger-worker'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '512'
+      Memory: '1024'
+      ExecutionRoleArn:
+        Fn::GetAtt:
+          - EcsExecutionRole
+          - Arn
+      TaskRoleArn:
+        Fn::GetAtt:
+          - EcsTaskRole
+          - Arn
+      ContainerDefinitions:
+        - Name: worker
+          Image:
+            Fn::Sub: '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${WorkerRepository}:latest'
+          Essential: true
+          Environment:
+            - Name: DOTNET_ENVIRONMENT
+              Value: Production
+            - Name: Logging__Json
+              Value: 'true'
+            - Name: Database__Provider
+              Value: Postgres
+            - Name: Database__AutoMigrate
+              Value: 'false'
+            - Name: Mongo__Enabled
+              Value: 'true'
+            - Name: Mongo__Database
+              Value: cloudledger_audit
+            - Name: Jwt__Issuer
+              Value: CloudLedger
+            - Name: Jwt__Audience
+              Value: CloudLedger.Web
+            - Name: Aws__Enabled
+              Value: 'true'
+            - Name: Aws__Region
+              Value:
+                Ref: AWS::Region
+            - Name: AWS_REGION
+              Value:
+                Ref: AWS::Region
+            - Name: Aws__UseLocalStack
+              Value: 'false'
+            - Name: Aws__SqsQueueName
+              Value:
+                Fn::GetAtt:
+                  - DomainEventsQueue
+                  - QueueName
+            - Name: Aws__DynamoTableName
+              Value:
+                Ref: IdempotencyTable
+            - Name: Aws__S3BucketName
+              Value:
+                Ref: ReportsBucket
+          Secrets:
+            - Name: ConnectionStrings__Postgres
+              ValueFrom:
+                Ref: DbConnectionSecret
+            - Name: Jwt__SigningKey
+              ValueFrom:
+                Ref: JwtSecret
+            - Name: Mongo__ConnectionString
+              ValueFrom:
+                Ref: MongoSecret
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group:
+                Ref: WorkerLogGroup
+              awslogs-region:
+                Ref: AWS::Region
+              awslogs-stream-prefix: worker
+
+  Alb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name:
+        Fn::Sub: '${EnvironmentName}-cloudledger-alb'
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - Ref: PublicSubnetA
+        - Ref: PublicSubnetB
+      SecurityGroups:
+        - Ref: AlbSecurityGroup
+
+  ApiTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name:
+        Fn::Sub: '${EnvironmentName}-cloudledger-api'
+      VpcId:
+        Ref: Vpc
+      Port: 8080
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: /health/live
+      HealthCheckProtocol: HTTP
+      Matcher:
+        HttpCode: '200'
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '30'
+
+  ApiListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn:
+        Ref: Alb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn:
+            Ref: ApiTargetGroup
+
+  ApiService:
+    Type: AWS::ECS::Service
+    DependsOn: ApiListener
+    Properties:
+      ServiceName:
+        Fn::Sub: '${EnvironmentName}-cloudledger-api'
+      Cluster:
+        Ref: EcsCluster
+      TaskDefinition:
+        Ref: ApiTaskDefinition
+      DesiredCount:
+        Ref: ApiDesiredCount
+      LaunchType: FARGATE
+      HealthCheckGracePeriodSeconds: 60
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - Ref: PublicSubnetA
+            - Ref: PublicSubnetB
+          SecurityGroups:
+            - Ref: EcsSecurityGroup
+      LoadBalancers:
+        - ContainerName: api
+          ContainerPort: 8080
+          TargetGroupArn:
+            Ref: ApiTargetGroup
+
+  WorkerService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName:
+        Fn::Sub: '${EnvironmentName}-cloudledger-worker'
+      Cluster:
+        Ref: EcsCluster
+      TaskDefinition:
+        Ref: WorkerTaskDefinition
+      DesiredCount:
+        Ref: WorkerDesiredCount
+      LaunchType: FARGATE
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 0
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - Ref: PublicSubnetA
+            - Ref: PublicSubnetB
+          SecurityGroups:
+            - Ref: EcsSecurityGroup
+
+  # ------------------------------------------------------------ CloudWatch
+  ApiServerErrorMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName:
+        Ref: ApiLogGroup
+      FilterPattern: '{ ($.Properties.StatusCode >= 500) }'
+      MetricTransformations:
+        - MetricNamespace: CloudLedger
+          MetricName: Api5xx
+          MetricValue: '1'
+          Unit: Count
+
+  ApiDurationMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName:
+        Ref: ApiLogGroup
+      FilterPattern: '{ $.Properties.Elapsed = * }'
+      MetricTransformations:
+        - MetricNamespace: CloudLedger
+          MetricName: ApiRequestDuration
+          MetricValue: $.Properties.Elapsed
+          Unit: Milliseconds
+
+  ErrorLogMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName:
+        Ref: ApiLogGroup
+      FilterPattern: '{ $.Level = "Error" || $.Level = "Fatal" }'
+      MetricTransformations:
+        - MetricNamespace: CloudLedger
+          MetricName: ErrorLogs
+          MetricValue: '1'
+          Unit: Count
+
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAlarmEmail
+    Properties:
+      TopicName:
+        Fn::Sub: '${EnvironmentName}-cloudledger-alarms'
+      DisplayName: Alarmes do CloudLedger
+
+  AlarmSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlarmEmail
+    Properties:
+      Protocol: email
+      TopicArn:
+        Ref: AlarmTopic
+      Endpoint:
+        Ref: AlarmEmail
+
+  AlarmTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Condition: HasAlarmEmail
+    Properties:
+      Topics:
+        - Ref: AlarmTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudwatch.amazonaws.com
+            Action: sns:Publish
+            Resource:
+              Ref: AlarmTopic
+
+  Api5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName:
+        Fn::Sub: '${EnvironmentName}-cloudledger-api-5xx'
+      AlarmDescription: Erros 5xx na API CloudLedger
+      Namespace: CloudLedger
+      MetricName: Api5xx
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - Fn::If:
+            - HasAlarmEmail
+            - Ref: AlarmTopic
+            - Ref: AWS::NoValue
+
+  ApiLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName:
+        Fn::Sub: '${EnvironmentName}-cloudledger-api-p95'
+      AlarmDescription: Latencia p95 acima de 1,5s
+      Namespace: CloudLedger
+      MetricName: ApiRequestDuration
+      ExtendedStatistic: p95
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 1500
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - Fn::If:
+            - HasAlarmEmail
+            - Ref: AlarmTopic
+            - Ref: AWS::NoValue
+
+  QueueDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName:
+        Fn::Sub: '${EnvironmentName}-cloudledger-sqs-depth'
+      AlarmDescription: Fila de eventos com profundidade elevada
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value:
+            Fn::GetAtt:
+              - DomainEventsQueue
+              - QueueName
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 100
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - Fn::If:
+            - HasAlarmEmail
+            - Ref: AlarmTopic
+            - Ref: AWS::NoValue
+
+  DlqAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName:
+        Fn::Sub: '${EnvironmentName}-cloudledger-sqs-dlq'
+      AlarmDescription: Mensagens na DLQ de eventos de dominio
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value:
+            Fn::GetAtt:
+              - DomainEventsDlq
+              - QueueName
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - Fn::If:
+            - HasAlarmEmail
+            - Ref: AlarmTopic
+            - Ref: AWS::NoValue
+
+  CloudLedgerDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName:
+        Fn::Sub: '${EnvironmentName}-cloudledger'
+      DashboardBody:
+        Fn::Sub: |
+          {
+            "widgets": [
+              {
+                "type": "metric",
+                "x": 0,
+                "y": 0,
+                "width": 12,
+                "height": 6,
+                "properties": {
+                  "title": "API - erros 5xx e logs de erro",
+                  "region": "${AWS::Region}",
+                  "view": "timeSeries",
+                  "stacked": false,
+                  "metrics": [
+                    [ "CloudLedger", "Api5xx", { "stat": "Sum", "period": 60 } ],
+                    [ "CloudLedger", "ErrorLogs", { "stat": "Sum", "period": 60 } ]
+                  ]
+                }
+              },
+              {
+                "type": "metric",
+                "x": 12,
+                "y": 0,
+                "width": 12,
+                "height": 6,
+                "properties": {
+                  "title": "API - latencia p95 (ms)",
+                  "region": "${AWS::Region}",
+                  "view": "timeSeries",
+                  "stacked": false,
+                  "metrics": [
+                    [ "CloudLedger", "ApiRequestDuration", { "stat": "p95", "period": 60 } ]
+                  ]
+                }
+              },
+              {
+                "type": "metric",
+                "x": 0,
+                "y": 6,
+                "width": 12,
+                "height": 6,
+                "properties": {
+                  "title": "SQS - fila principal e DLQ",
+                  "region": "${AWS::Region}",
+                  "view": "timeSeries",
+                  "stacked": false,
+                  "metrics": [
+                    [ "AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${EnvironmentName}-cloudledger-domain-events", { "stat": "Sum", "period": 60 } ],
+                    [ "AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${EnvironmentName}-cloudledger-domain-events-dlq", { "stat": "Sum", "period": 60 } ]
+                  ]
+                }
+              },
+              {
+                "type": "metric",
+                "x": 12,
+                "y": 6,
+                "width": 12,
+                "height": 6,
+                "properties": {
+                  "title": "ECS - CPU",
+                  "region": "${AWS::Region}",
+                  "view": "timeSeries",
+                  "stacked": false,
+                  "metrics": [
+                    [ "AWS/ECS", "CPUUtilization", "ClusterName", "${EnvironmentName}-cloudledger", "ServiceName", "${EnvironmentName}-cloudledger-api", { "stat": "Average", "period": 60 } ],
+                    [ "AWS/ECS", "CPUUtilization", "ClusterName", "${EnvironmentName}-cloudledger", "ServiceName", "${EnvironmentName}-cloudledger-worker", { "stat": "Average", "period": 60 } ]
+                  ]
+                }
+              }
+            ]
+          }
+
+Outputs:
+  FrontendUrl:
+    Description: URL publica da SPA (inclui /api/* via CloudFront)
+    Value:
+      Fn::Sub: 'https://${FrontendDistribution.DomainName}'
+
+  ApiUrl:
+    Description: Base da API atraves do CloudFront
+    Value:
+      Fn::Sub: 'https://${FrontendDistribution.DomainName}/api/v1'
+
+  AlbDnsName:
+    Description: DNS do ALB (origem HTTP, use o CloudFront publicamente)
+    Value:
+      Fn::GetAtt:
+        - Alb
+        - DNSName
+
+  ApiRepositoryName:
+    Description: Repositorio ECR da API
+    Value:
+      Ref: ApiRepository
+
+  WorkerRepositoryName:
+    Description: Repositorio ECR do Worker
+    Value:
+      Ref: WorkerRepository
+
+  ReportsBucketName:
+    Description: Bucket private dos relatorios
+    Value:
+      Ref: ReportsBucket
+
+  FrontendBucketName:
+    Description: Bucket do build Angular
+    Value:
+      Ref: FrontendBucket
+
+  DomainEventsQueueUrl:
+    Description: Fila principal de eventos
+    Value:
+      Ref: DomainEventsQueue
+
+  DomainEventsDlqUrl:
+    Description: DLQ de eventos
+    Value:
+      Ref: DomainEventsDlq
+
+  CloudWatchDashboard:
+    Description: Dashboard operacional
+    Value:
+      Ref: CloudLedgerDashboard
+
+  FrontendDistributionId:
+    Description: ID da distribuicao CloudFront
+    Value:
+      Ref: FrontendDistribution

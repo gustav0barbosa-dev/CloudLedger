@@ -36,7 +36,7 @@ CloudLedger/
 │   ├── CloudLedger.UnitTests/
 │   ├── CloudLedger.IntegrationTests/
 │   └── e2e/                      # Playwright
-├── infrastructure/               # IaC (AWS CDK) e recursos de nuvem
+├── infrastructure/               # IaC (CloudFormation) e recursos de nuvem
 ├── docs/
 │   ├── requirements/             # especificação do MVP e fonte original
 │   ├── architecture/             # visão geral, modelo de dados, ADRs
@@ -88,6 +88,37 @@ Quando `Aws__Enabled=false`, os adaptadores locais apenas registram logs — út
 dotnet run --project backend/CloudLedger.Worker
 ```
 
+### Observabilidade e deploy AWS
+
+Em produção os serviços emitem logs Serilog em JSON (`Logging__Json=true`), o que permite extrair
+`StatusCode`, `Elapsed`, `CorrelationId` e nível do log no CloudWatch Logs. O template
+[`infrastructure/cloudformation/cloudledger.yaml`](infrastructure/cloudformation/cloudledger.yaml)
+provisiona VPC, RDS PostgreSQL, SQS com DLQ (`maxReceiveCount=5`), DynamoDB, S3 privado para
+relatórios, S3 + CloudFront para a SPA, ECS Fargate (API e Worker), além de:
+
+- filtros de métrica para 5xx, latência de requisição e logs de erro;
+- alarmes para 5xx, p95, profundidade da fila e mensagens na DLQ;
+- dashboard operacional com API, SQS e CPU dos serviços ECS.
+
+O template foi validado com `cfn-lint`. O fluxo S3/DynamoDB/SQS foi validado em LocalStack:
+eventos publicados do outbox, itens `Completed` no DynamoDB, download via URL assinada no S3 e,
+após 5 recebimentos de um payload inválido, a mensagem foi movida para a DLQ.
+
+Para publicar em uma conta AWS (requer AWS CLI, Docker e credenciais com permissão de deploy):
+
+```powershell
+$env:CLOUDLEDGER_DB_PASSWORD = '...'
+$env:CLOUDLEDGER_JWT_KEY = 'chave-com-ao-menos-32-bytes'
+$env:CLOUDLEDGER_MONGO_URI = 'mongodb://...'
+$env:CLOUDLEDGER_ALARM_EMAIL = 'ops@example.com' # opcional
+./scripts/deploy-aws.ps1 -StackName cloudledger-dev -EnvironmentName dev -Region us-east-1
+```
+
+Também existe o workflow manual **Deploy AWS (manual)** em `.github/workflows/deploy.yml`. Ele usa
+OIDC e espera os secrets `AWS_DEPLOY_ROLE_ARN`, `CLOUDLEDGER_DB_PASSWORD`, `CLOUDLEDGER_JWT_KEY` e
+`CLOUDLEDGER_MONGO_URI` (além de `CLOUDLEDGER_ALARM_EMAIL`, opcional). O TLS é terminado no
+CloudFront; por isso a origem ECS roda com `HttpsRedirection__Enabled=false`.
+
 ### Testes
 
 ```bash
@@ -122,8 +153,8 @@ Instruções detalhadas, incluindo migrações e testes, estão em [`docs/archit
 | 2 — Núcleo financeiro | Auth, usuários, contas, categorias, lançamentos | ✅ |
 | 3 — Dashboard | Resumo, séries, categorias, recentes, metas | ✅ |
 | 4 — Recursos avançados | Transferências, recorrências, metas, auditoria Mongo | ✅ |
-| 5 — AWS e eventos | Outbox transacional, SQS + Worker, idempotência em DynamoDB, adaptadores S3/SQS/DynamoDB | ✅ (CloudWatch alarms e deploy em AWS pendentes de validação) |
-| 6 — Finalização | E2E (Playwright), autenticação, testes e CI | ✅ (paridade total com o protótipo e deploy pendentes) |
+| 5 — AWS e eventos | Outbox transacional, SQS + Worker, idempotência em DynamoDB, S3, CloudWatch e IaC | ✅ (fluxo validado em LocalStack; deploy em AWS preparado) |
+| 6 — Finalização | E2E (Playwright), autenticação, testes e CI | ✅ (paridade total com o protótipo; deploy manual depende de credenciais) |
 
 ### Cobertura do protótipo
 
@@ -134,5 +165,6 @@ configurações. Os cenários principais são validados por Playwright em `tests
 
 ### Pendências conhecidas
 
-- Validação ponta a ponta de S3, DynamoDB, DLQ e CloudWatch com LocalStack, seguida de deploy AWS.
+- Executar o deploy em AWS e validar os alarmes CloudWatch em conta real; o template passou em
+  `cfn-lint` e a cadeia SQS/DynamoDB/S3 foi validada em LocalStack.
 - Comparação visual exata com imagens externas; a referência é `docs/design/CloudLedger_Prototipo.html`.

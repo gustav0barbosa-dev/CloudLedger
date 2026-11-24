@@ -22,7 +22,6 @@ public sealed class OutboxMessage : Entity
         Attempts = 0;
     }
 
-    public Guid Id { get; private set; }
     public string Type { get; private set; } = string.Empty;
     public Guid UserId { get; private set; }
     public Guid? ResourceId { get; private set; }

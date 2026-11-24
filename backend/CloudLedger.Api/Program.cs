@@ -17,13 +17,28 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
+using Serilog.Formatting.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Host.UseSerilog((context, _, configuration) => configuration
-    .ReadFrom.Configuration(context.Configuration)
-    .Enrich.FromLogContext()
-    .WriteTo.Console());
+var jsonLogs = builder.Configuration.GetValue("Logging:Json", false);
+var httpsRedirectionEnabled = builder.Configuration.GetValue("HttpsRedirection:Enabled", true);
+
+builder.Host.UseSerilog((context, _, configuration) =>
+{
+    configuration
+        .ReadFrom.Configuration(context.Configuration)
+        .Enrich.FromLogContext();
+
+    if (jsonLogs)
+    {
+        configuration.WriteTo.Console(new JsonFormatter(renderMessage: true));
+    }
+    else
+    {
+        configuration.WriteTo.Console();
+    }
+});
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -170,7 +185,13 @@ if (app.Environment.IsDevelopment())
 else
 {
     app.UseHsts();
-    app.UseHttpsRedirection();
+
+    // Quando o TLS é terminado no CloudFront, a origem ECS recebe HTTP;
+    // o redirecionamento é desligado via HttpsRedirection__Enabled=false.
+    if (httpsRedirectionEnabled)
+    {
+        app.UseHttpsRedirection();
+    }
 }
 
 app.UseCors("spa");
