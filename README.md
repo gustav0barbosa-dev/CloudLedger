@@ -76,6 +76,33 @@ O usuário demo é criado automaticamente: `demo@cloudledger.dev` / `Demo@12345`
 - API: <http://localhost:5080> · Swagger: <http://localhost:5080/swagger>
 - Frontend: <http://localhost:4200>
 
+### Worker e eventos de domínio
+
+As operações financeiras gravam seus eventos em uma tabela de **outbox transacional** no mesmo
+`SaveChanges` da transação. O `CloudLedger.Worker` publica esses eventos no SQS e os consome com
+idempotência (estado em DynamoDB, chave `sqs-event:{EventId}`). Mensagens com falha voltam para a
+fila e, após 5 tentativas, são direcionadas para a DLQ `cloudledger-domain-events-dlq`.
+Quando `Aws__Enabled=false`, os adaptadores locais apenas registram logs — útil para desenvolvimento.
+
+```bash
+dotnet run --project backend/CloudLedger.Worker
+```
+
+### Testes
+
+```bash
+# Unitários e integração (integração exige PostgreSQL)
+dotnet test tests/CloudLedger.UnitTests/CloudLedger.UnitTests.csproj
+dotnet test tests/CloudLedger.IntegrationTests/CloudLedger.IntegrationTests.csproj
+
+# Frontend (Karma)
+npm --prefix frontend/cloudledger-web test -- --watch=false
+
+# E2E (Playwright — inicia API e Angular automaticamente)
+npm --prefix tests/e2e install
+npm --prefix tests/e2e test
+```
+
 Instruções detalhadas, incluindo migrações e testes, estão em [`docs/architecture/overview.md`](docs/architecture/overview.md).
 
 ## Documentação
@@ -95,5 +122,13 @@ Instruções detalhadas, incluindo migrações e testes, estão em [`docs/archit
 | 2 — Núcleo financeiro | Auth, usuários, contas, categorias, lançamentos | ✅ |
 | 3 — Dashboard | Resumo, séries, categorias, recentes, metas | ✅ |
 | 4 — Recursos avançados | Transferências, recorrências, metas, auditoria Mongo | ✅ |
-| 5 — AWS e eventos | SQS, Worker, DynamoDB, S3, CloudWatch | 🚧 |
-| 6 — Finalização | E2E, segurança, acessibilidade, deploy | 🚧 |
+| 5 — AWS e eventos | Outbox transacional, SQS + Worker, idempotência em DynamoDB, adaptadores S3/SQS/DynamoDB | ✅ (CloudWatch alarms e deploy em AWS pendentes de validação) |
+| 6 — Finalização | E2E (Playwright), autenticação, testes e CI | ✅ (paridade total com o protótipo e deploy pendentes) |
+
+### Pendências conhecidas
+
+- Validação ponta a ponta de S3, DynamoDB, DLQ e CloudWatch com LocalStack, seguida de deploy AWS.
+- Telas/ações do protótipo ainda não implementadas: CRUD de categorias, perfil/senha,
+  notificações, auditoria/relatórios, movimentação de metas, pagar/ignorar ocorrências
+  recorrentes e páginas de configurações.
+- Comparação visual exata com imagens externas; a referência é `docs/design/CloudLedger_Prototipo.html`.
