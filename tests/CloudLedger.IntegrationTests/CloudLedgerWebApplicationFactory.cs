@@ -10,9 +10,18 @@ public sealed class CloudLedgerWebApplicationFactory : WebApplicationFactory<Pro
 
     public CloudLedgerWebApplicationFactory()
     {
-        // Garante que as configurações de teste prevaleçam sobre appsettings.Development.json.
-        Environment.SetEnvironmentVariable("Database__Provider", "InMemory");
-        Environment.SetEnvironmentVariable("Database__InMemoryDatabaseName", DatabaseName);
+        var provider = Environment.GetEnvironmentVariable("Database__Provider");
+        if (string.IsNullOrWhiteSpace(provider))
+        {
+            provider = "InMemory";
+            Environment.SetEnvironmentVariable("Database__Provider", provider);
+        }
+
+        if (string.Equals(provider, "InMemory", StringComparison.OrdinalIgnoreCase))
+        {
+            Environment.SetEnvironmentVariable("Database__InMemoryDatabaseName", DatabaseName);
+        }
+
         Environment.SetEnvironmentVariable("Database__AutoMigrate", "true");
         Environment.SetEnvironmentVariable("Mongo__Enabled", "false");
         Environment.SetEnvironmentVariable("Mongo__ConnectionString", "");
@@ -26,16 +35,21 @@ public sealed class CloudLedgerWebApplicationFactory : WebApplicationFactory<Pro
 
         builder.ConfigureAppConfiguration((_, config) =>
         {
+            var provider = Environment.GetEnvironmentVariable("Database__Provider") ?? "InMemory";
             var settings = new Dictionary<string, string?>
             {
-                ["Database:Provider"] = "InMemory",
-                ["Database:InMemoryDatabaseName"] = DatabaseName,
+                ["Database:Provider"] = provider,
                 ["Database:AutoMigrate"] = "true",
                 ["Mongo:Enabled"] = "false",
                 ["Mongo:ConnectionString"] = "",
                 ["Aws:Enabled"] = "false",
                 ["RateLimiting:Auth:PermitLimit"] = "1000"
             };
+
+            if (string.Equals(provider, "InMemory", StringComparison.OrdinalIgnoreCase))
+            {
+                settings["Database:InMemoryDatabaseName"] = DatabaseName;
+            }
 
             config.AddInMemoryCollection(settings);
         });

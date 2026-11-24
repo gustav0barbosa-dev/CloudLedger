@@ -10,7 +10,7 @@ builder.Services.AddSerilog(configuration => configuration
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.AddHostedService<CloudLedger.Worker.Workers.WorkerHeartbeat>();
+builder.Services.AddHostedService<CloudLedger.Worker.Workers.SqsEventConsumer>();
 
 var host = builder.Build();
 await host.RunAsync();
