@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService } from '../../core/auth.service';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-login',
@@ -37,8 +38,8 @@ export class LoginComponent {
   private auth = inject(AuthService);
   private router = inject(Router);
 
-  email = 'demo@cloudledger.dev';
-  password = 'Demo@12345';
+  email = environment.production ? '' : 'demo@cloudledger.dev';
+  password = environment.production ? '' : 'Demo@12345';
   loading = signal(false);
   error = signal<string | null>(null);
 

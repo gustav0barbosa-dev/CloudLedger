@@ -36,6 +36,11 @@ export class AuthService {
     return this.http.post<AuthResponse>(`${environment.apiBaseUrl}/auth/login`, { email, password });
   }
 
+  refresh() {
+    const refresh = localStorage.getItem(this.refreshKey);
+    return this.http.post<AuthResponse>(`${environment.apiBaseUrl}/auth/refresh`, { refreshToken: refresh });
+  }
+
   setSession(response: AuthResponse) {
     localStorage.setItem(this.tokenKey, response.accessToken);
     localStorage.setItem(this.refreshKey, response.refreshToken);
@@ -44,6 +49,10 @@ export class AuthService {
   }
 
   logout() {
+    const refresh = localStorage.getItem(this.refreshKey);
+    if (refresh) {
+      this.http.post(`${environment.apiBaseUrl}/auth/logout`, { refreshToken: refresh }).subscribe({ next: () => {}, error: () => {} });
+    }
     localStorage.removeItem(this.tokenKey);
     localStorage.removeItem(this.refreshKey);
     this.user.set(null);
