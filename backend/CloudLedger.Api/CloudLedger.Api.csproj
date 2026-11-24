@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>CloudLedger.Api</RootNamespace>
+    <UserSecretsId>cloudledger-api</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CloudLedger.Application\CloudLedger.Application.csproj" />
+    <ProjectReference Include="..\CloudLedger.Domain\CloudLedger.Domain.csproj" />
+    <ProjectReference Include="..\CloudLedger.Infrastructure\CloudLedger.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.34" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.34">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="8.0.34" />
+    <PackageReference Include="MongoDB.Driver" Version="3.14.1" />
+    <PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CloudLedger.IntegrationTests" />
+  </ItemGroup>
+
+</Project>

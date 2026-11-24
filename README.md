@@ -59,6 +59,20 @@ npm --prefix frontend/cloudledger-web install
 npm --prefix frontend/cloudledger-web start
 ```
 
+### Execução sem Docker (modo InMemory)
+
+Quando o Docker não estiver disponível, a API pode rodar com armazenamento em memória:
+
+```bash
+# PowerShell
+$env:ASPNETCORE_ENVIRONMENT="Development"
+$env:Database__Provider="InMemory"
+$env:Mongo__Enabled="false"
+dotnet run --project backend/CloudLedger.Api
+```
+
+O usuário demo é criado automaticamente: `demo@cloudledger.dev` / `Demo@12345`.
+
 - API: <http://localhost:5080> · Swagger: <http://localhost:5080/swagger>
 - Frontend: <http://localhost:4200>
 

@@ -1,0 +1,61 @@
+name: cloudledger
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cloudledger-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cloudledger}
+      POSTGRES_USER: ${POSTGRES_USER:-cloudledger}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cloudledger_dev}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cloudledger} -d ${POSTGRES_DB:-cloudledger}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    container_name: cloudledger-mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${POSTGRES_USER:-cloudledger}
+      MONGO_INITDB_ROOT_PASSWORD: ${POSTGRES_PASSWORD:-cloudledger_dev}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  localstack:
+    image: localstack/localstack:3
+    container_name: cloudledger-localstack
+    environment:
+      SERVICES: sqs,dynamodb,s3
+      DEBUG: "0"
+      AWS_DEFAULT_REGION: us-east-1
+    ports:
+      - "4566:4566"
+    volumes:
+      - "./scripts/localstack-init.sh:/etc/localstack/init/ready.d/init.sh:ro"
+      - localstackdata:/var/lib/localstack
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  mongodata:
+  localstackdata:
