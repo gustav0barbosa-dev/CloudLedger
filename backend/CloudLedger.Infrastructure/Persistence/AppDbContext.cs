@@ -1,6 +1,7 @@
 using CloudLedger.Application.Abstractions;
 using CloudLedger.Domain.Accounts;
 using CloudLedger.Domain.Categories;
+using CloudLedger.Domain.Events;
 using CloudLedger.Domain.Goals;
 using CloudLedger.Domain.Notifications;
 using CloudLedger.Domain.Recurring;
@@ -40,6 +41,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<Notification> Notifications => Set<Notification>();
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

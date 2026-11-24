@@ -4,6 +4,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using CloudLedger.Application.Contracts.Auth;
 using CloudLedger.Application.Contracts.Finance;
+using CloudLedger.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace CloudLedger.IntegrationTests;
 
@@ -73,6 +76,29 @@ public sealed class AuthAndFinanceTests : IClassFixture<CloudLedgerWebApplicatio
 
         var afterVoid = await _client.GetFromJsonAsync<AccountDto>($"/api/v1/accounts/{account.Id}", JsonOptions);
         Assert.Equal(before, afterVoid!.Balance);
+    }
+
+    [Fact]
+    public async Task TransactionCreation_PersistsOutboxMessage()
+    {
+        await LoginAsync();
+
+        var accounts = await _client.GetFromJsonAsync<List<AccountDto>>("/api/v1/accounts", JsonOptions);
+        var account = accounts!.First();
+        var before = await CountOutboxMessagesAsync();
+
+        var create = await _client.PostAsJsonAsync("/api/v1/transactions", new CreateTransactionRequest(
+            account.Id, null, CloudLedger.Domain.Transactions.TransactionType.Expense, 25m, "Teste outbox", DateOnly.FromDateTime(DateTime.UtcNow)));
+
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        Assert.Equal(before + 1, await CountOutboxMessagesAsync());
+    }
+
+    private async Task<int> CountOutboxMessagesAsync()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        return await db.OutboxMessages.CountAsync();
     }
 
     [Fact]

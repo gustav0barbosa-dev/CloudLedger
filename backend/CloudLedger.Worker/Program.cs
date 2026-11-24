@@ -10,6 +10,8 @@ builder.Services.AddSerilog(configuration => configuration
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddScoped<CloudLedger.Worker.Workers.IDomainEventProcessor, CloudLedger.Worker.Workers.DomainEventProcessor>();
+builder.Services.AddHostedService<CloudLedger.Worker.Workers.OutboxDispatcher>();
 builder.Services.AddHostedService<CloudLedger.Worker.Workers.SqsEventConsumer>();
 
 var host = builder.Build();

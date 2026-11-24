@@ -223,14 +223,6 @@ public sealed class RecurringPaymentService
                 nameof(RecurringPayment),
                 payment.Id));
 
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-            await _idempotency.CompleteAsync(key, transaction.Id.ToString(), cancellationToken);
-
-            await _audit.WriteAsync(
-                AuditEventFactory.Create(userId, AuditActions.RecurringOccurrencePaid, nameof(RecurringPayment), payment.Id, _correlation.CorrelationId, _clock.UtcNow,
-                    ("dueDate", dueDate.ToString("yyyy-MM-dd")), ("transactionId", transaction.Id.ToString())),
-                cancellationToken);
-
             await _events.PublishAsync(
                 new DomainEvent(Guid.NewGuid(), AuditActions.RecurringOccurrencePaid, userId, payment.Id, _clock.UtcNow,
                     new Dictionary<string, string?>
@@ -238,6 +230,14 @@ public sealed class RecurringPaymentService
                         ["dueDate"] = dueDate.ToString("yyyy-MM-dd"),
                         ["transactionId"] = transaction.Id.ToString()
                     }),
+                cancellationToken);
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _idempotency.CompleteAsync(key, transaction.Id.ToString(), cancellationToken);
+
+            await _audit.WriteAsync(
+                AuditEventFactory.Create(userId, AuditActions.RecurringOccurrencePaid, nameof(RecurringPayment), payment.Id, _correlation.CorrelationId, _clock.UtcNow,
+                    ("dueDate", dueDate.ToString("yyyy-MM-dd")), ("transactionId", transaction.Id.ToString())),
                 cancellationToken);
 
             return new OccurrenceDto(payment.Id, dueDate, OccurrenceStatus.Paid, transaction.Id, existing.PaidAt);

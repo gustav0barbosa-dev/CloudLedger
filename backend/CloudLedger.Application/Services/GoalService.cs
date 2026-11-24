@@ -161,13 +161,6 @@ public sealed class GoalService
                 goal.Id));
         }
 
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        await _audit.WriteAsync(
-            AuditEventFactory.Create(userId, AuditActions.GoalMovementCreated, nameof(SavingGoal), goal.Id, _correlation.CorrelationId, _clock.UtcNow,
-                ("type", movement.Type.ToString()), ("amount", movement.Amount.ToString("0.00"))),
-            cancellationToken);
-
         await _events.PublishAsync(
             new DomainEvent(Guid.NewGuid(), AuditActions.GoalMovementCreated, userId, goal.Id, _clock.UtcNow,
                 new Dictionary<string, string?>
@@ -176,6 +169,13 @@ public sealed class GoalService
                     ["amount"] = movement.Amount.ToString("0.00"),
                     ["status"] = goal.Status.ToString()
                 }),
+            cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _audit.WriteAsync(
+            AuditEventFactory.Create(userId, AuditActions.GoalMovementCreated, nameof(SavingGoal), goal.Id, _correlation.CorrelationId, _clock.UtcNow,
+                ("type", movement.Type.ToString()), ("amount", movement.Amount.ToString("0.00"))),
             cancellationToken);
 
         return ToDto(movement);

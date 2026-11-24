@@ -74,14 +74,6 @@ public sealed class TransferService
             request.Description);
 
         _transfers.Add(transfer);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        await _audit.WriteAsync(
-            AuditEventFactory.Create(userId, AuditActions.TransferCreated, nameof(Transfer), transfer.Id, _correlation.CorrelationId, _clock.UtcNow,
-                ("amount", transfer.Amount.ToString("0.00")),
-                ("sourceAccountId", transfer.SourceAccountId.ToString()),
-                ("destinationAccountId", transfer.DestinationAccountId.ToString())),
-            cancellationToken);
 
         await _events.PublishAsync(
             new DomainEvent(Guid.NewGuid(), AuditActions.TransferCreated, userId, transfer.Id, _clock.UtcNow,
@@ -91,6 +83,15 @@ public sealed class TransferService
                     ["sourceAccountId"] = transfer.SourceAccountId.ToString(),
                     ["destinationAccountId"] = transfer.DestinationAccountId.ToString()
                 }),
+            cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _audit.WriteAsync(
+            AuditEventFactory.Create(userId, AuditActions.TransferCreated, nameof(Transfer), transfer.Id, _correlation.CorrelationId, _clock.UtcNow,
+                ("amount", transfer.Amount.ToString("0.00")),
+                ("sourceAccountId", transfer.SourceAccountId.ToString()),
+                ("destinationAccountId", transfer.DestinationAccountId.ToString())),
             cancellationToken);
 
         return await _transfers.GetViewAsync(userId, transfer.Id, cancellationToken)
@@ -103,16 +104,17 @@ public sealed class TransferService
             ?? throw new NotFoundException("Transferência");
 
         transfer.Void(_clock.UtcNow);
+
+        await _events.PublishAsync(
+            new DomainEvent(Guid.NewGuid(), AuditActions.TransferVoided, userId, transfer.Id, _clock.UtcNow,
+                new Dictionary<string, string?> { ["amount"] = transfer.Amount.ToString("0.00") }),
+            cancellationToken);
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await _audit.WriteAsync(
             AuditEventFactory.Create(userId, AuditActions.TransferVoided, nameof(Transfer), transfer.Id, _correlation.CorrelationId, _clock.UtcNow,
                 ("amount", transfer.Amount.ToString("0.00"))),
-            cancellationToken);
-
-        await _events.PublishAsync(
-            new DomainEvent(Guid.NewGuid(), AuditActions.TransferVoided, userId, transfer.Id, _clock.UtcNow,
-                new Dictionary<string, string?> { ["amount"] = transfer.Amount.ToString("0.00") }),
             cancellationToken);
     }
 }

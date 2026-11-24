@@ -30,6 +30,8 @@ public sealed class AwsOptions
 
     public string SqsQueueName { get; set; } = "cloudledger-domain-events";
 
+    public string SqsDeadLetterQueueName { get; set; } = "cloudledger-domain-events-dlq";
+
     public string DynamoTableName { get; set; } = "cloudledger-idempotency";
 
     public string S3BucketName { get; set; } = "cloudledger-reports";

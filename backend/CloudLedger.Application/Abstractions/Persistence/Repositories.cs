@@ -1,6 +1,7 @@
 using CloudLedger.Application.Common.Models;
 using CloudLedger.Domain.Accounts;
 using CloudLedger.Domain.Categories;
+using CloudLedger.Domain.Events;
 using CloudLedger.Domain.Goals;
 using CloudLedger.Domain.Notifications;
 using CloudLedger.Domain.Recurring;
@@ -152,4 +153,15 @@ public interface INotificationRepository
     Task<int> MarkAllReadAsync(Guid userId, CancellationToken cancellationToken = default);
 
     void Add(Notification notification);
+}
+
+public interface IOutboxRepository
+{
+    void Add(OutboxMessage message);
+
+    Task<IReadOnlyList<OutboxMessage>> GetUnpublishedAsync(int batchSize, CancellationToken cancellationToken = default);
+
+    Task MarkPublishedAsync(Guid id, DateTime utcNow, CancellationToken cancellationToken = default);
+
+    Task MarkFailedAsync(Guid id, string error, DateTime utcNow, CancellationToken cancellationToken = default);
 }

@@ -64,7 +64,19 @@ public interface IAuditReader
 
 public interface IDomainEventPublisher
 {
+    /// <summary>
+    /// Registra o evento no outbox na mesma transação da operação de domínio.
+    /// </summary>
     Task PublishAsync(DomainEvent domainEvent, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Envio efetivo do evento para o barramento (SQS). Falhas devem ser propagadas
+/// para que o outbox mantenha a mensagem pendente e tente novamente.
+/// </summary>
+public interface IDomainEventSender
+{
+    Task SendAsync(DomainEvent domainEvent, CancellationToken cancellationToken = default);
 }
 
 public interface IIdempotencyStore

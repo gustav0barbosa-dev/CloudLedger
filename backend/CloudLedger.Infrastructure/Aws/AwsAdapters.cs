@@ -8,6 +8,7 @@ using Amazon.S3.Model;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using CloudLedger.Application.Abstractions;
+using CloudLedger.Application.Abstractions.Persistence;
 using CloudLedger.Application.Common.Exceptions;
 using CloudLedger.Application.Common.Options;
 using CloudLedger.Domain.Events;
@@ -16,30 +17,30 @@ using Microsoft.Extensions.Options;
 
 namespace CloudLedger.Infrastructure.Aws;
 
-public sealed class SqsDomainEventPublisher : IDomainEventPublisher
+public sealed class SqsDomainEventSender : IDomainEventSender
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IAmazonSQS _sqs;
     private readonly AwsOptions _options;
-    private readonly ILogger<SqsDomainEventPublisher> _logger;
+    private readonly ILogger<SqsDomainEventSender> _logger;
     private readonly SemaphoreSlim _queueLock = new(1, 1);
     private string? _queueUrl;
 
-    public SqsDomainEventPublisher(IAmazonSQS sqs, IOptions<AwsOptions> options, ILogger<SqsDomainEventPublisher> logger)
+    public SqsDomainEventSender(IAmazonSQS sqs, IOptions<AwsOptions> options, ILogger<SqsDomainEventSender> logger)
     {
         _sqs = sqs;
         _options = options.Value;
         _logger = logger;
     }
 
-    public async Task PublishAsync(DomainEvent domainEvent, CancellationToken cancellationToken = default)
+    public async Task SendAsync(DomainEvent domainEvent, CancellationToken cancellationToken = default)
     {
+        var queueUrl = await GetQueueUrlAsync(cancellationToken);
+        var body = JsonSerializer.Serialize(domainEvent, JsonOptions);
+
         try
         {
-            var queueUrl = await GetQueueUrlAsync(cancellationToken);
-            var body = JsonSerializer.Serialize(domainEvent, JsonOptions);
-
             await _sqs.SendMessageAsync(
                 new SendMessageRequest
                 {
@@ -54,7 +55,9 @@ public sealed class SqsDomainEventPublisher : IDomainEventPublisher
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Falha ao publicar evento {EventType} na fila SQS", domainEvent.Type);
+            // Não engolir a falha: o outbox deve manter a mensagem pendente para nova tentativa.
+            _logger.LogError(ex, "Falha ao enviar evento {EventType} para SQS", domainEvent.Type);
+            throw;
         }
     }
 
@@ -73,10 +76,12 @@ public sealed class SqsDomainEventPublisher : IDomainEventPublisher
                 return _queueUrl;
             }
 
+            var dlqUrl = await EnsureDeadLetterQueueAsync(cancellationToken);
+
+            string queueUrl;
             try
             {
-                var response = await _sqs.GetQueueUrlAsync(_options.SqsQueueName, cancellationToken);
-                _queueUrl = response.QueueUrl;
+                queueUrl = (await _sqs.GetQueueUrlAsync(_options.SqsQueueName, cancellationToken)).QueueUrl;
             }
             catch (QueueDoesNotExistException)
             {
@@ -91,10 +96,32 @@ public sealed class SqsDomainEventPublisher : IDomainEventPublisher
                         }
                     },
                     cancellationToken);
-                _queueUrl = created.QueueUrl;
-                _logger.LogInformation("Fila SQS {QueueName} criada em {QueueUrl}", _options.SqsQueueName, _queueUrl);
+                queueUrl = created.QueueUrl;
+                _logger.LogInformation("Fila SQS {QueueName} criada em {QueueUrl}", _options.SqsQueueName, queueUrl);
             }
 
+            var queueArn = await GetQueueArnAsync(queueUrl, cancellationToken);
+            var dlqArn = await GetQueueArnAsync(dlqUrl, cancellationToken);
+            var redrivePolicy = JsonSerializer.Serialize(new
+            {
+                deadLetterTargetArn = dlqArn,
+                maxReceiveCount = "5"
+            });
+
+            await _sqs.SetQueueAttributesAsync(
+                new SetQueueAttributesRequest
+                {
+                    QueueUrl = queueUrl,
+                    Attributes = new Dictionary<string, string>
+                    {
+                        ["VisibilityTimeout"] = "60",
+                        ["MessageRetentionPeriod"] = "1209600",
+                        ["RedrivePolicy"] = redrivePolicy
+                    }
+                },
+                cancellationToken);
+
+            _queueUrl = queueUrl;
             return _queueUrl;
         }
         finally
@@ -102,21 +129,73 @@ public sealed class SqsDomainEventPublisher : IDomainEventPublisher
             _queueLock.Release();
         }
     }
+
+    private async Task<string> EnsureDeadLetterQueueAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return (await _sqs.GetQueueUrlAsync(_options.SqsDeadLetterQueueName, cancellationToken)).QueueUrl;
+        }
+        catch (QueueDoesNotExistException)
+        {
+            var created = await _sqs.CreateQueueAsync(
+                new CreateQueueRequest
+                {
+                    QueueName = _options.SqsDeadLetterQueueName,
+                    Attributes = new Dictionary<string, string>
+                    {
+                        ["MessageRetentionPeriod"] = "1209600"
+                    }
+                },
+                cancellationToken);
+            _logger.LogInformation("DLQ SQS {QueueName} criada em {QueueUrl}", _options.SqsDeadLetterQueueName, created.QueueUrl);
+            return created.QueueUrl;
+        }
+    }
+
+    private async Task<string> GetQueueArnAsync(string queueUrl, CancellationToken cancellationToken)
+    {
+        var response = await _sqs.GetQueueAttributesAsync(
+            new GetQueueAttributesRequest
+            {
+                QueueUrl = queueUrl,
+                AttributeNames = new List<string> { "QueueArn" }
+            },
+            cancellationToken);
+
+        return response.Attributes["QueueArn"];
+    }
 }
 
-public sealed class LoggingDomainEventPublisher : IDomainEventPublisher
+public sealed class LoggingDomainEventSender : IDomainEventSender
 {
-    private readonly ILogger<LoggingDomainEventPublisher> _logger;
+    private readonly ILogger<LoggingDomainEventSender> _logger;
 
-    public LoggingDomainEventPublisher(ILogger<LoggingDomainEventPublisher> logger) => _logger = logger;
+    public LoggingDomainEventSender(ILogger<LoggingDomainEventSender> logger) => _logger = logger;
+
+    public Task SendAsync(DomainEvent domainEvent, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Evento de domínio {EventType} ({EventId}) enviado pelo outbox em modo local (AWS desabilitada)",
+            domainEvent.Type,
+            domainEvent.EventId);
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// Publica eventos no outbox transacional. A gravação acontece no mesmo
+/// SaveChanges da operação financeira que originou o evento.
+/// </summary>
+public sealed class OutboxDomainEventPublisher : IDomainEventPublisher
+{
+    private readonly IOutboxRepository _outbox;
+
+    public OutboxDomainEventPublisher(IOutboxRepository outbox) => _outbox = outbox;
 
     public Task PublishAsync(DomainEvent domainEvent, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation(
-            "Evento de domínio {EventType} ({EventId}) para usuário {UserId} — AWS desabilitada, evento não enfileirado",
-            domainEvent.Type,
-            domainEvent.EventId,
-            domainEvent.UserId);
+        _outbox.Add(new OutboxMessage(domainEvent));
         return Task.CompletedTask;
     }
 }

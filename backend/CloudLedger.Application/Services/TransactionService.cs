@@ -74,16 +74,8 @@ public sealed class TransactionService
             request.OccurredAt);
 
         _transactions.Add(transaction);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        await _audit.WriteAsync(
-            AuditEventFactory.Create(userId, AuditActions.TransactionCreated, nameof(Transaction), transaction.Id, _correlation.CorrelationId, _clock.UtcNow,
-                ("type", transaction.Type.ToString()),
-                ("amount", transaction.Amount.ToString("0.00")),
-                ("accountId", transaction.AccountId.ToString()),
-                ("occurredAt", transaction.OccurredAt.ToString("yyyy-MM-dd"))),
-            cancellationToken);
-
+        // Outbox na mesma transação do lançamento: se o SaveChanges falhar, o evento não é gravado.
         await _events.PublishAsync(
             new DomainEvent(Guid.NewGuid(), AuditActions.TransactionCreated, userId, transaction.Id, _clock.UtcNow,
                 new Dictionary<string, string?>
@@ -92,6 +84,16 @@ public sealed class TransactionService
                     ["type"] = transaction.Type.ToString(),
                     ["accountId"] = transaction.AccountId.ToString()
                 }),
+            cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _audit.WriteAsync(
+            AuditEventFactory.Create(userId, AuditActions.TransactionCreated, nameof(Transaction), transaction.Id, _correlation.CorrelationId, _clock.UtcNow,
+                ("type", transaction.Type.ToString()),
+                ("amount", transaction.Amount.ToString("0.00")),
+                ("accountId", transaction.AccountId.ToString()),
+                ("occurredAt", transaction.OccurredAt.ToString("yyyy-MM-dd"))),
             cancellationToken);
 
         return await GetAsync(userId, transaction.Id, cancellationToken);
@@ -129,16 +131,17 @@ public sealed class TransactionService
             ?? throw new NotFoundException("Lançamento");
 
         transaction.Void(_clock.UtcNow);
+
+        await _events.PublishAsync(
+            new DomainEvent(Guid.NewGuid(), AuditActions.TransactionVoided, userId, transaction.Id, _clock.UtcNow,
+                new Dictionary<string, string?> { ["accountId"] = transaction.AccountId.ToString() }),
+            cancellationToken);
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await _audit.WriteAsync(
             AuditEventFactory.Create(userId, AuditActions.TransactionVoided, nameof(Transaction), transaction.Id, _correlation.CorrelationId, _clock.UtcNow,
                 ("amount", transaction.Amount.ToString("0.00"))),
-            cancellationToken);
-
-        await _events.PublishAsync(
-            new DomainEvent(Guid.NewGuid(), AuditActions.TransactionVoided, userId, transaction.Id, _clock.UtcNow,
-                new Dictionary<string, string?> { ["accountId"] = transaction.AccountId.ToString() }),
             cancellationToken);
     }
 

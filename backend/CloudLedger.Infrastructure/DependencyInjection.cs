@@ -80,11 +80,15 @@ public static class DependencyInjection
         services.AddScoped<IRecurringOccurrenceRepository, RecurringOccurrenceRepository>();
         services.AddScoped<ISavingGoalRepository, SavingGoalRepository>();
         services.AddScoped<INotificationRepository, NotificationRepository>();
+        services.AddScoped<IOutboxRepository, OutboxRepository>();
 
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();
         services.AddSingleton<IRefreshTokenGenerator, RefreshTokenGenerator>();
         services.AddSingleton<ITokenService, JwtTokenService>();
+
+        // Eventos são sempre gravados no outbox na mesma transação da operação financeira.
+        services.AddScoped<IDomainEventPublisher, OutboxDomainEventPublisher>();
 
         AddAuditing(services, configuration);
         AddAwsAdapters(services, configuration);
@@ -125,7 +129,7 @@ public static class DependencyInjection
 
         if (!options.Enabled)
         {
-            services.AddSingleton<IDomainEventPublisher, LoggingDomainEventPublisher>();
+            services.AddSingleton<IDomainEventSender, LoggingDomainEventSender>();
             services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
             services.AddSingleton<IReportStorage, LocalReportStorage>();
             return;
@@ -145,7 +149,7 @@ public static class DependencyInjection
             ? new AmazonS3Client(AwsClientFactory.S3Config(options))
             : new AmazonS3Client(credentials, AwsClientFactory.S3Config(options)));
 
-        services.AddSingleton<IDomainEventPublisher, SqsDomainEventPublisher>();
+        services.AddSingleton<IDomainEventSender, SqsDomainEventSender>();
         services.AddSingleton<IIdempotencyStore, DynamoIdempotencyStore>();
         services.AddSingleton<IReportStorage, S3ReportStorage>();
     }
