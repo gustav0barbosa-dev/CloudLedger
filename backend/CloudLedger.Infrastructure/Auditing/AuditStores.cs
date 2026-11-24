@@ -141,8 +141,9 @@ public sealed class MongoAuditStore : IAuditWriter, IAuditReader
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Falha ao consultar eventos de auditoria do usuário {UserId}", userId);
-            return PagedResult<AuditEvent>.Empty(page, pageSize);
+            _logger.LogError(ex, "Falha ao consultar eventos de auditoria do usuário {UserId}", userId);
+            // Não confundir "sem registros" com "MongoDB indisponível".
+            throw new InfrastructureUnavailableException("de auditoria");
         }
     }
 }

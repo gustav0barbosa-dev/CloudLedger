@@ -40,6 +40,7 @@ public sealed class ExceptionHandlingMiddleware
             ForbiddenException => (StatusCodes.Status403Forbidden, "Acesso negado"),
             NotFoundException => (StatusCodes.Status404NotFound, "Recurso não encontrado"),
             ConflictException => (StatusCodes.Status409Conflict, "Conflito"),
+            InfrastructureUnavailableException => (StatusCodes.Status503ServiceUnavailable, "Serviço indisponível"),
             DomainException => (StatusCodes.Status422UnprocessableEntity, "Regra de negócio não atendida"),
             BadHttpRequestException => (StatusCodes.Status400BadRequest, "Requisição inválida"),
             _ => (StatusCodes.Status500InternalServerError, "Erro interno")
@@ -68,7 +69,11 @@ public sealed class ExceptionHandlingMiddleware
         {
             Status = status,
             Title = title,
-            Detail = status >= 500 ? "Ocorreu um erro inesperado. Tente novamente mais tarde." : exception.Message,
+            Detail = exception is InfrastructureUnavailableException
+                ? exception.Message
+                : status >= 500
+                    ? "Ocorreu um erro inesperado. Tente novamente mais tarde."
+                    : exception.Message,
             Instance = context.Request.Path
         };
 

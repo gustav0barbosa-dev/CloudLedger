@@ -38,6 +38,14 @@ public sealed class UnauthorizedException : AppException
     }
 }
 
+public sealed class InfrastructureUnavailableException : AppException
+{
+    public InfrastructureUnavailableException(string service)
+        : base("infrastructure_unavailable", $"O serviço {service} está temporariamente indisponível.")
+    {
+    }
+}
+
 public sealed class ValidationAppException : AppException
 {
     public ValidationAppException(string field, string message) : base("validation", message)

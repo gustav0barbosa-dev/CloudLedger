@@ -202,6 +202,8 @@ public sealed class OutboxDomainEventPublisher : IDomainEventPublisher
 
 public sealed class DynamoIdempotencyStore : IIdempotencyStore
 {
+    private static readonly TimeSpan StaleProcessingAfter = TimeSpan.FromMinutes(10);
+
     private readonly IAmazonDynamoDB _dynamo;
     private readonly AwsOptions _options;
     private readonly ILogger<DynamoIdempotencyStore> _logger;
@@ -215,12 +217,16 @@ public sealed class DynamoIdempotencyStore : IIdempotencyStore
 
     public async Task<bool> TryBeginAsync(string key, string requestHash, TimeSpan ttl, CancellationToken cancellationToken = default)
     {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var expiresAt = DateTimeOffset.UtcNow.Add(ttl).ToUnixTimeSeconds().ToString();
+
         var item = new Dictionary<string, AttributeValue>
         {
             ["PK"] = new() { S = key },
             ["RequestHash"] = new() { S = requestHash },
             ["Status"] = new() { S = "Processing" },
-            ["ExpiresAt"] = new() { N = DateTimeOffset.UtcNow.Add(ttl).ToUnixTimeSeconds().ToString() }
+            ["StartedAt"] = new() { N = now.ToString() },
+            ["ExpiresAt"] = new() { N = expiresAt }
         };
 
         try
@@ -246,13 +252,54 @@ public sealed class DynamoIdempotencyStore : IIdempotencyStore
                 },
                 cancellationToken);
 
-            if (existing.Item.TryGetValue("RequestHash", out var hash)
-                && string.Equals(hash.S, requestHash, StringComparison.Ordinal))
+            if (!existing.Item.TryGetValue("RequestHash", out var hash)
+                || !string.Equals(hash.S, requestHash, StringComparison.Ordinal))
+            {
+                throw new ConflictException("idempotency.conflict", "A mesma chave de idempotência foi usada com um conteúdo diferente.");
+            }
+
+            var status = existing.Item.TryGetValue("Status", out var statusAttribute)
+                ? statusAttribute.S
+                : "Processing";
+
+            if (string.Equals(status, "Completed", StringComparison.Ordinal))
             {
                 return false;
             }
 
-            throw new ConflictException("idempotency.conflict", "A mesma chave de idempotência foi usada com um conteúdo diferente.");
+            if (string.Equals(status, "Processing", StringComparison.Ordinal)
+                && !IsStale(existing.Item))
+            {
+                return false;
+            }
+
+            // Registro abandonado (Processing) ou falho (Failed): recupera a reserva
+            // com CONDITION para não disputar com outro processo.
+            try
+            {
+                await _dynamo.UpdateItemAsync(
+                    new UpdateItemRequest
+                    {
+                        TableName = _options.DynamoTableName,
+                        Key = new Dictionary<string, AttributeValue> { ["PK"] = new() { S = key } },
+                        UpdateExpression = "SET #status = :processing, StartedAt = :started, ExpiresAt = :expires REMOVE CompletedAt, FailedAt",
+                        ConditionExpression = "#status = :currentStatus",
+                        ExpressionAttributeNames = new Dictionary<string, string> { ["#status"] = "Status" },
+                        ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                        {
+                            [":processing"] = new() { S = "Processing" },
+                            [":currentStatus"] = new() { S = status },
+                            [":started"] = new() { N = now.ToString() },
+                            [":expires"] = new() { N = expiresAt }
+                        }
+                    },
+                    cancellationToken);
+                return true;
+            }
+            catch (ConditionalCheckFailedException)
+            {
+                return false;
+            }
         }
     }
 
@@ -265,12 +312,13 @@ public sealed class DynamoIdempotencyStore : IIdempotencyStore
                 {
                     TableName = _options.DynamoTableName,
                     Key = new Dictionary<string, AttributeValue> { ["PK"] = new() { S = key } },
-                    UpdateExpression = "SET #status = :status, ResultReference = :reference",
+                    UpdateExpression = "SET #status = :status, ResultReference = :reference, CompletedAt = :completed REMOVE FailedAt",
                     ExpressionAttributeNames = new Dictionary<string, string> { ["#status"] = "Status" },
                     ExpressionAttributeValues = new Dictionary<string, AttributeValue>
                     {
                         [":status"] = new() { S = "Completed" },
-                        [":reference"] = new() { S = resultReference ?? string.Empty }
+                        [":reference"] = new() { S = resultReference ?? string.Empty },
+                        [":completed"] = new() { N = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString() }
                     }
                 },
                 cancellationToken);
@@ -285,18 +333,37 @@ public sealed class DynamoIdempotencyStore : IIdempotencyStore
     {
         try
         {
-            await _dynamo.DeleteItemAsync(
-                new DeleteItemRequest
+            await _dynamo.UpdateItemAsync(
+                new UpdateItemRequest
                 {
                     TableName = _options.DynamoTableName,
-                    Key = new Dictionary<string, AttributeValue> { ["PK"] = new() { S = key } }
+                    Key = new Dictionary<string, AttributeValue> { ["PK"] = new() { S = key } },
+                    UpdateExpression = "SET #status = :status, FailedAt = :failed REMOVE CompletedAt",
+                    ExpressionAttributeNames = new Dictionary<string, string> { ["#status"] = "Status" },
+                    ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                    {
+                        [":status"] = new() { S = "Failed" },
+                        [":failed"] = new() { N = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString() }
+                    }
                 },
                 cancellationToken);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Falha ao liberar registro de idempotência {Key}", key);
+            _logger.LogWarning(ex, "Falha ao registrar falha de idempotência {Key}", key);
         }
+    }
+
+    private static bool IsStale(IReadOnlyDictionary<string, AttributeValue> item)
+    {
+        if (!item.TryGetValue("StartedAt", out var attribute)
+            || !long.TryParse(attribute.N, out var seconds))
+        {
+            return true;
+        }
+
+        var startedAt = DateTimeOffset.FromUnixTimeSeconds(seconds);
+        return DateTimeOffset.UtcNow - startedAt >= StaleProcessingAfter;
     }
 }
 
